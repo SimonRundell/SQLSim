@@ -9,7 +9,7 @@ A client-side SQL query simulator built with React and Vite for learning SQL SEL
 - ✅ **INNER JOIN** with ON conditions
 - ✅ **WHERE** clauses with AND-chained equality comparisons
 - ✅ **GROUP BY** for data aggregation
-- ✅ **COUNT()** aggregate function
+- ✅ **Aggregate Functions**: COUNT(), SUM(), AVG(), MIN(), MAX()
 - ✅ **ORDER BY** with ASC/DESC
 - ✅ **LIMIT** for result set size
 - ✅ Real-time error feedback with helpful messages
@@ -40,14 +40,21 @@ FROM <table>
 
 - **COUNT(*)**: Count all rows in a group
 - **COUNT(column)**: Count non-null values in a column
+- **SUM(column)**: Calculate sum of numeric values
+- **AVG(column)**: Calculate average of numeric values
+- **MIN(column)**: Find minimum value
+- **MAX(column)**: Find maximum value
+
+Note: All aggregate functions except COUNT(*) require a column name and work only with numeric data.
 
 ### Operators
 
-- **WHERE clause**: Only `=` (equality) supported
-- **Comparison types**: `column = value`, `column = column`
-- **Logic**: Only `AND` (no OR, NOT, or parentheses in MVP)
+- **WHERE clause**: Onlfour teaching tables:
 
-### Sample Tables
+1. **students** (student_id, forename, surname, tutor_group_id)
+2. **tutor_groups** (tutor_group_id, tutor_name, room)
+3. **attendance** (student_id, session_date, present)
+4. **grades** (student_id, module, paper, score
 
 The simulator includes three teaching tables:
 
@@ -116,7 +123,26 @@ ORDER BY COUNT(*) DESC
 SELECT surname, COUNT(*) 
 FROM students 
 WHERE tutor_group_id = 1
-GROUP BY surname
+GRO
+
+### 10. Aggregate Functions
+```sql
+-- Average score across all grades
+SELECT AVG(score) FROM grades
+
+-- Module performance statistics
+SELECT module, COUNT(*), AVG(score), MIN(score), MAX(score)
+FROM grades
+GROUP BY module
+ORDER BY AVG(score) DESC
+
+-- Student performance summary
+SELECT students.forename, students.surname, AVG(grades.score), MAX(grades.score)
+FROM students
+INNER JOIN grades ON students.student_id = grades.student_id
+GROUP BY students.forename, students.surname
+ORDER BY AVG(grades.score) DESC
+```UP BY surname
 ```
 
 ## Getting Started
@@ -129,7 +155,7 @@ npm install
 
 ### Development
 
-```bash
+```bashHAVIN
 npm run dev
 ```
 

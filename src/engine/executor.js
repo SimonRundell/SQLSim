@@ -202,7 +202,9 @@ export class Executor {
   }
 
   computeAggregate(aggFunc, rows) {
-    if (aggFunc.function === 'COUNT') {
+    const funcName = aggFunc.function;
+    
+    if (funcName === 'COUNT') {
       if (aggFunc.argument.type === 'Star') {
         // COUNT(*) - count all rows
         return rows.length;
@@ -220,7 +222,40 @@ export class Executor {
         return count;
       }
     }
-    return 0;
+    
+    // For SUM, AVG, MIN, MAX - need to extract values from the column
+    const colRef = aggFunc.argument;
+    const tableName = colRef.table || colRef.resolvedTable;
+    const values = [];
+    
+    for (const row of rows) {
+      const value = row[tableName][colRef.column];
+      if (value !== null && value !== undefined && typeof value === 'number') {
+        values.push(value);
+      }
+    }
+    
+    if (values.length === 0) {
+      return null; // No valid values
+    }
+    
+    switch (funcName) {
+      case 'SUM':
+        return values.reduce((sum, val) => sum + val, 0);
+      
+      case 'AVG':
+        const sum = values.reduce((s, val) => s + val, 0);
+        return Math.round((sum / values.length) * 100) / 100; // Round to 2 decimal places
+      
+      case 'MIN':
+        return Math.min(...values);
+      
+      case 'MAX':
+        return Math.max(...values);
+      
+      default:
+        return 0;
+    }
   }
 
   applySelect(rowset) {

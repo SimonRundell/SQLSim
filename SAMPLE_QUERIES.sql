@@ -122,21 +122,67 @@ INNER JOIN tutor_groups ON students.tutor_group_id = tutor_groups.tutor_group_id
 GROUP BY tutor_groups.room, tutor_groups.tutor_name
 ORDER BY COUNT(*) DESC
 
-// 25. Count with WHERE filter
-SELECT tutor_group_id, COUNT(*) 
-FROM students 
-WHERE tutor_group_id = 1 OR tutor_group_id = 2
-GROUP BY tutor_group_id
-
-// 26. Count attendance records per student
+// 25. Count attendance records per student
 SELECT students.forename, students.surname, COUNT(*) 
 FROM students
 INNER JOIN attendance ON students.student_id = attendance.student_id
 GROUP BY students.forename, students.surname
 ORDER BY COUNT(*) DESC
 
-// ==================== COMPLEX QUERIES ====================
-// GROUP BY tutor_groups.tutor_name
+// ==================== AGGREGATE FUNCTIONS (NEW!) ====================
+
+// 26. Average score for all grades
+SELECT AVG(score) FROM grades
+
+// 27. Sum of all scores
+SELECT SUM(score) FROM grades
+
+// 28. Highest and lowest scores
+SELECT MAX(score), MIN(score) FROM grades
+
+// 29. Average score by module
+SELECT module, AVG(score)
+FROM grades
+GROUP BY module
+
+// 30. Total scores by student
+SELECT student_id, SUM(score)
+FROM grades
+GROUP BY student_id
+ORDER BY SUM(score) DESC
+
+// 31. Student performance summary
+SELECT students.forename, students.surname, AVG(grades.score), MIN(grades.score), MAX(grades.score)
+FROM students
+INNER JOIN grades ON students.student_id = grades.student_id
+GROUP BY students.forename, students.surname
+ORDER BY AVG(grades.score) DESC
+
+// 32. Module statistics
+SELECT module, COUNT(*), AVG(score), MIN(score), MAX(score)
+FROM grades
+GROUP BY module
+ORDER BY AVG(score) DESC
+
+// 33. Average score by paper number
+SELECT paper, AVG(score)
+FROM grades
+GROUP BY paper
+ORDER BY paper ASC
+
+// 34. Performance in specific module
+SELECT students.forename, students.surname, AVG(grades.score)
+FROM students
+INNER JOIN grades ON students.student_id = grades.student_id
+WHERE grades.module = 'Programming'
+GROUP BY students.forename, students.surname
+ORDER BY AVG(grades.score) DESC
+
+// 35. Top performing module for each student (using MAX)
+SELECT student_id, module, MAX(score)
+FROM grades
+GROUP BY student_id, module
+ORDER BY student_id ASC
 
 // ==================== ERROR EXAMPLES ====================
 
@@ -163,6 +209,3 @@ SELECT * FROM students WHERE surname = "Smith"
 
 // ERROR: Unsupported operator
 SELECT * FROM students WHERE student_id > 5
-
-// ERROR: Unsupported aggregate function
-SELECT SUM(student_id) FROM students

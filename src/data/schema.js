@@ -28,6 +28,14 @@ export const schema = {
       { name: 'present', type: 'string' },
     ],
   },
+  grades: {
+    columns: [
+      { name: 'student_id', type: 'number' },
+      { name: 'module', type: 'string' },
+      { name: 'paper', type: 'number' },
+      { name: 'score', type: 'number' },
+    ],
+  },
 };
 
 /**

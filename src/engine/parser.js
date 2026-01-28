@@ -83,12 +83,13 @@ export class Parser {
 
   parseSelectItem() {
     // select_item := aggregate_function | column_ref
-    // aggregate_function := COUNT "(" ("*" | column_ref) ")"
+    // aggregate_function := (COUNT|SUM|AVG|MIN|MAX) "(" ("*" | column_ref) ")"
     
     const token = this.current();
     
-    // Check if this is an aggregate function (COUNT followed by '(')
-    if (token.type === TokenType.KEYWORD && token.value.toUpperCase() === 'COUNT') {
+    // Check if this is an aggregate function
+    const aggFuncs = ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'];
+    if (token.type === TokenType.KEYWORD && aggFuncs.includes(token.value.toUpperCase())) {
       return this.parseAggregateFunction();
     }
     
@@ -96,14 +97,30 @@ export class Parser {
   }
 
   parseAggregateFunction() {
-    // aggregate_function := COUNT "(" ("*" | column_ref) ")"
+    // aggregate_function := (COUNT|SUM|AVG|MIN|MAX) "(" ("*" | column_ref) ")"
     const funcToken = this.current();
     const funcName = funcToken.value.toUpperCase();
-    this.expectKeyword('COUNT');
+    
+    // Accept any of the aggregate functions
+    if (!['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'].includes(funcName)) {
+      throw createSyntaxError(
+        `Expected aggregate function (COUNT, SUM, AVG, MIN, MAX), got ${funcName}`,
+        funcToken.start
+      );
+    }
+    
+    this.advance(); // consume the function name
     this.expect(TokenType.LPAREN);
 
     let argument;
     if (this.check(TokenType.STAR)) {
+      // Only COUNT supports * argument
+      if (funcName !== 'COUNT') {
+        throw createSyntaxError(
+          `${funcName} does not support * argument, use a column name`,
+          this.current().start
+        );
+      }
       this.advance();
       argument = { type: 'Star' };
     } else {
@@ -339,7 +356,7 @@ export class Parser {
     const token = this.current();
     
     // Check for unsupported features
-    const unsupportedKeywords = ['HAVING', 'DISTINCT', 'SUM', 'AVG', 'MIN', 'MAX', 'OR', 'NOT', 'LIKE', 'IN', 'BETWEEN', 'LEFT', 'RIGHT', 'OUTER', 'FULL'];
+    const unsupportedKeywords = ['HAVING', 'DISTINCT', 'OR', 'NOT', 'LIKE', 'IN', 'BETWEEN', 'LEFT', 'RIGHT', 'OUTER', 'FULL'];
     if (token.type === TokenType.KEYWORD && unsupportedKeywords.includes(token.value.toUpperCase())) {
       throw createUnsupportedFeatureError(token.value.toUpperCase(), token.start);
     }
