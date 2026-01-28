@@ -29,16 +29,36 @@ export class Executor {
       rowset = this.applyWhere(rowset);
     }
 
-    // Step 4: Apply SELECT projection
-    const { columns, rows } = this.applySelect(rowset);
+    // Step 4: Check if query has aggregates
+    const hasAggregates = this.ast.select.items.some(
+      item => item.type === 'AggregateFunction'
+    );
 
-    // Step 5: Apply ORDER BY
+    // Step 5: Apply GROUP BY if present, or create single group for aggregates without GROUP BY
+    let groupedData = null;
+    if (this.ast.groupBy) {
+      groupedData = this.applyGroupBy(rowset);
+    } else if (hasAggregates) {
+      // Aggregates without GROUP BY - treat entire rowset as one group
+      groupedData = new Map();
+      groupedData.set('_all', {
+        rows: rowset,
+        firstRow: rowset[0] || {},
+      });
+    }
+
+    // Step 6: Apply SELECT projection
+    const { columns, rows } = groupedData 
+      ? this.applySelectWithGroupBy(groupedData)
+      : this.applySelect(rowset);
+
+    // Step 7: Apply ORDER BY
     let orderedRows = rows;
     if (this.ast.orderBy) {
       orderedRows = this.applyOrderBy(rows, columns, rowset);
     }
 
-    // Step 6: Apply LIMIT
+    // Step 8: Apply LIMIT
     let finalRows = orderedRows;
     if (this.ast.limit) {
       finalRows = orderedRows.slice(0, this.ast.limit.value);
@@ -105,6 +125,102 @@ export class Executor {
       }
       return true;
     });
+  }
+
+  applyGroupBy(rowset) {
+    // Group rows by GROUP BY columns
+    const groups = new Map();
+
+    for (const row of rowset) {
+      // Build group key from GROUP BY columns
+      const keyParts = this.ast.groupBy.columns.map(colRef => {
+        const tableName = colRef.table || colRef.resolvedTable;
+        return String(row[tableName][colRef.column]);
+      });
+      const groupKey = keyParts.join('|');
+
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, {
+          rows: [],
+          firstRow: row, // Keep first row for column values
+        });
+      }
+
+      groups.get(groupKey).rows.push(row);
+    }
+
+    return groups;
+  }
+
+  applySelectWithGroupBy(groupedData) {
+    // Build columns and rows from grouped data
+    const columns = [];
+    const rows = [];
+
+    // Determine column names and what to compute
+    for (const item of this.ast.select.items) {
+      if (item.type === 'ColumnRef') {
+        const tableName = item.table || item.resolvedTable;
+        if (this.validator.tablesInScope.length > 1 && !item.table) {
+          columns.push(`${tableName}.${item.column}`);
+        } else if (item.table) {
+          columns.push(`${item.table}.${item.column}`);
+        } else {
+          columns.push(item.column);
+        }
+      } else if (item.type === 'AggregateFunction') {
+        // Build aggregate column name
+        if (item.argument.type === 'Star') {
+          columns.push(`${item.function}(*)`);
+        } else {
+          const argCol = item.argument.column;
+          columns.push(`${item.function}(${argCol})`);
+        }
+      }
+    }
+
+    // Build rows from each group
+    for (const [groupKey, groupData] of groupedData) {
+      const row = [];
+
+      for (const item of this.ast.select.items) {
+        if (item.type === 'ColumnRef') {
+          // Get column value from first row in group
+          const tableName = item.table || item.resolvedTable;
+          row.push(groupData.firstRow[tableName][item.column]);
+        } else if (item.type === 'AggregateFunction') {
+          // Compute aggregate
+          const value = this.computeAggregate(item, groupData.rows);
+          row.push(value);
+        }
+      }
+
+      rows.push(row);
+    }
+
+    return { columns, rows };
+  }
+
+  computeAggregate(aggFunc, rows) {
+    if (aggFunc.function === 'COUNT') {
+      if (aggFunc.argument.type === 'Star') {
+        // COUNT(*) - count all rows
+        return rows.length;
+      } else {
+        // COUNT(column) - count non-null values
+        const colRef = aggFunc.argument;
+        const tableName = colRef.table || colRef.resolvedTable;
+        let count = 0;
+        for (const row of rows) {
+          const value = row[tableName][colRef.column];
+          if (value !== null && value !== undefined) {
+            count++;
+          }
+        }
+        return count;
+      }
+    }
+    return 0;
   }
 
   applySelect(rowset) {

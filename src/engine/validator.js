@@ -8,6 +8,7 @@ import {
   createUnknownTableError,
   createUnknownColumnError,
   createAmbiguousColumnError,
+  createSyntaxError,
 } from './errors.js';
 
 export class Validator {
@@ -39,7 +40,19 @@ export class Validator {
     // Validate SELECT list
     if (!this.ast.select.star) {
       for (const item of this.ast.select.items) {
-        this.validateColumnRef(item);
+        this.validateSelectItem(item);
+      }
+    }
+
+    // Validate GROUP BY
+    if (this.ast.groupBy) {
+      for (const column of this.ast.groupBy.columns) {
+        this.validateColumnRef(column);
+      }
+
+      // When GROUP BY is used, validate SELECT list items
+      if (!this.ast.select.star) {
+        this.validateSelectWithGroupBy();
       }
     }
 
@@ -94,6 +107,44 @@ export class Validator {
 
       // Store the resolved table for later use
       columnRef.resolvedTable = matchingTables[0];
+    }
+  }
+
+  validateSelectItem(item) {
+    if (item.type === 'AggregateFunction') {
+      // Validate aggregate function argument
+      if (item.argument.type === 'ColumnRef') {
+        this.validateColumnRef(item.argument);
+      }
+      // Star (*) in COUNT(*) doesn't need validation
+    } else if (item.type === 'ColumnRef') {
+      this.validateColumnRef(item);
+    }
+  }
+
+  validateSelectWithGroupBy() {
+    // When GROUP BY is present, SELECT items must be either:
+    // 1. A column in the GROUP BY clause
+    // 2. An aggregate function
+    
+    const groupByColumns = this.ast.groupBy.columns.map(col => {
+      const table = col.table || col.resolvedTable;
+      return `${table}.${col.column}`;
+    });
+
+    for (const item of this.ast.select.items) {
+      if (item.type === 'ColumnRef') {
+        const table = item.table || item.resolvedTable;
+        const fullColName = `${table}.${item.column}`;
+        
+        if (!groupByColumns.includes(fullColName)) {
+          throw createSyntaxError(
+            `Column '${item.column}' must appear in GROUP BY clause or be used in an aggregate function`,
+            item.position
+          );
+        }
+      }
+      // Aggregate functions are allowed
     }
   }
 

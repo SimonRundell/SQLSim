@@ -94,10 +94,48 @@ FROM students
 INNER JOIN attendance ON students.student_id = attendance.student_id
 WHERE students.surname = 'Smith' AND students.forename = 'Alice'
 
-// 20. All tutor groups with student count (requires future GROUP BY feature)
-// SELECT tutor_groups.tutor_name, COUNT(students.student_id)
-// FROM tutor_groups
-// LEFT JOIN students ON tutor_groups.tutor_group_id = students.tutor_group_id
+// ==================== COUNT and GROUP BY ====================
+
+// 20. Count all students
+SELECT COUNT(*) FROM students
+
+// 21. Count students by tutor group
+SELECT tutor_group_id, COUNT(*) 
+FROM students 
+GROUP BY tutor_group_id
+
+// 22. Count students with tutor names
+SELECT tutor_groups.tutor_name, COUNT(*) 
+FROM students
+INNER JOIN tutor_groups ON students.tutor_group_id = tutor_groups.tutor_group_id
+GROUP BY tutor_groups.tutor_name
+
+// 23. Count by surname
+SELECT surname, COUNT(*) 
+FROM students 
+GROUP BY surname
+
+// 24. Count students by room with ordering
+SELECT tutor_groups.room, tutor_groups.tutor_name, COUNT(*) 
+FROM students
+INNER JOIN tutor_groups ON students.tutor_group_id = tutor_groups.tutor_group_id
+GROUP BY tutor_groups.room, tutor_groups.tutor_name
+ORDER BY COUNT(*) DESC
+
+// 25. Count with WHERE filter
+SELECT tutor_group_id, COUNT(*) 
+FROM students 
+WHERE tutor_group_id = 1 OR tutor_group_id = 2
+GROUP BY tutor_group_id
+
+// 26. Count attendance records per student
+SELECT students.forename, students.surname, COUNT(*) 
+FROM students
+INNER JOIN attendance ON students.student_id = attendance.student_id
+GROUP BY students.forename, students.surname
+ORDER BY COUNT(*) DESC
+
+// ==================== COMPLEX QUERIES ====================
 // GROUP BY tutor_groups.tutor_name
 
 // ==================== ERROR EXAMPLES ====================
@@ -115,11 +153,16 @@ SELECT foo FROM students
 // ERROR: Unknown table
 SELECT * FROM professors
 
-// ERROR: Unsupported feature (GROUP BY)
-SELECT COUNT(*) FROM students
+// ERROR: Column not in GROUP BY
+SELECT forename, COUNT(*) 
+FROM students 
+GROUP BY tutor_group_id
 
 // ERROR: Double quotes not allowed
 SELECT * FROM students WHERE surname = "Smith"
 
 // ERROR: Unsupported operator
 SELECT * FROM students WHERE student_id > 5
+
+// ERROR: Unsupported aggregate function
+SELECT SUM(student_id) FROM students

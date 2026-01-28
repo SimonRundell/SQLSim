@@ -8,6 +8,8 @@ A client-side SQL query simulator built with React and Vite for learning SQL SEL
 - ✅ **FROM** single table
 - ✅ **INNER JOIN** with ON conditions
 - ✅ **WHERE** clauses with AND-chained equality comparisons
+- ✅ **GROUP BY** for data aggregation
+- ✅ **COUNT()** aggregate function
 - ✅ **ORDER BY** with ASC/DESC
 - ✅ **LIMIT** for result set size
 - ✅ Real-time error feedback with helpful messages
@@ -25,13 +27,19 @@ A client-side SQL query simulator built with React and Vite for learning SQL SEL
 ### Supported SQL Features
 
 ```sql
-SELECT <columns or *>
+SELECT <columns or * or COUNT(*)>
 FROM <table>
 [INNER JOIN <table> ON <column> = <column>]
 [WHERE <condition> AND <condition> ...]
+[GROUP BY <column> [, <column> ...]]
 [ORDER BY <column> [ASC|DESC]]
 [LIMIT <number>]
 ```
+
+### Aggregate Functions
+
+- **COUNT(*)**: Count all rows in a group
+- **COUNT(column)**: Count non-null values in a column
 
 ### Operators
 
@@ -82,6 +90,35 @@ SELECT * FROM students
 WHERE tutor_group_id = 1 AND surname = 'Smith'
 ```
 
+### 6. COUNT all rows
+```sql
+SELECT COUNT(*) FROM students
+```
+
+### 7. GROUP BY with COUNT
+```sql
+SELECT tutor_group_id, COUNT(*) 
+FROM students 
+GROUP BY tutor_group_id
+```
+
+### 8. GROUP BY with JOIN
+```sql
+SELECT tutor_groups.tutor_name, tutor_groups.room, COUNT(*) 
+FROM students
+INNER JOIN tutor_groups ON students.tutor_group_id = tutor_groups.tutor_group_id
+GROUP BY tutor_groups.tutor_name, tutor_groups.room
+ORDER BY COUNT(*) DESC
+```
+
+### 9. GROUP BY with WHERE
+```sql
+SELECT surname, COUNT(*) 
+FROM students 
+WHERE tutor_group_id = 1
+GROUP BY surname
+```
+
 ## Getting Started
 
 ### Installation
@@ -112,7 +149,7 @@ The simulator provides clear, student-friendly error messages:
 - **UNKNOWN_TABLE**: Table doesn't exist
 - **UNKNOWN_COLUMN**: Column not found in any accessible table
 - **AMBIGUOUS_COLUMN**: Column exists in multiple tables (needs qualification)
-- **UNSUPPORTED_FEATURE**: Feature not yet implemented (e.g., GROUP BY, LEFT JOIN)
+- **UNSUPPORTED_FEATURE**: Feature not yet implemented (e.g., LEFT JOIN, SUM, AVG)
 
 ## Architecture
 
@@ -133,13 +170,14 @@ src/
       └── ResultsPanel.jsx
 ```
 
-## Future Enhancements (Not in MVP)
+## Future Enhancements
 
 - LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN
 - Multiple JOINs
 - OR, NOT, parentheses in WHERE
 - LIKE, IN, BETWEEN operators
-- GROUP BY, HAVING, aggregates (COUNT, SUM, AVG, etc.)
+- Additional aggregates (SUM, AVG, MIN, MAX)
+- HAVING clause
 - DISTINCT
 - Table and column aliases
 - CREATE TEMP TABLE
@@ -155,7 +193,9 @@ Try these test cases to verify functionality:
 3. ✅ JOIN query (see example #3 above)
 4. ✅ Ambiguous column: `SELECT tutor_group_id FROM students INNER JOIN tutor_groups ON students.tutor_group_id = tutor_groups.tutor_group_id` (should error)
 5. ✅ Unknown column: `SELECT foo FROM students` (should error)
-6. ✅ Unsupported feature: `SELECT COUNT(*) FROM students` (should error)
+6. ✅ COUNT aggregate: `SELECT COUNT(*) FROM students` (should work)
+7. ✅ GROUP BY: `SELECT tutor_group_id, COUNT(*) FROM students GROUP BY tutor_group_id` (should work)
+8. ✅ GROUP BY validation: `SELECT forename, COUNT(*) FROM students GROUP BY tutor_group_id` (should error - forename not in GROUP BY)
 
 ## License
 

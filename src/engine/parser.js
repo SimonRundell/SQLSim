@@ -19,7 +19,7 @@ export class Parser {
   }
 
   parseQuery() {
-    // query := SELECT select_list FROM table_ref [join_clause] [where_clause] [order_clause] [limit_clause]
+    // query := SELECT select_list FROM table_ref [join_clause] [where_clause] [group_by_clause] [order_clause] [limit_clause]
     this.expectKeyword('SELECT');
     const select = this.parseSelectList();
 
@@ -34,6 +34,11 @@ export class Parser {
     let where = null;
     if (this.checkKeyword('WHERE')) {
       where = this.parseWhereClause();
+    }
+
+    let groupBy = null;
+    if (this.checkKeyword('GROUP')) {
+      groupBy = this.parseGroupByClause();
     }
 
     let orderBy = null;
@@ -52,6 +57,7 @@ export class Parser {
       from,
       join,
       where,
+      groupBy,
       orderBy,
       limit,
     };
@@ -65,14 +71,53 @@ export class Parser {
     }
 
     const items = [];
-    items.push(this.parseColumnRef());
+    items.push(this.parseSelectItem());
 
     while (this.check(TokenType.COMMA)) {
       this.advance();
-      items.push(this.parseColumnRef());
+      items.push(this.parseSelectItem());
     }
 
     return { type: 'Select', star: false, items };
+  }
+
+  parseSelectItem() {
+    // select_item := aggregate_function | column_ref
+    // aggregate_function := COUNT "(" ("*" | column_ref) ")"
+    
+    const token = this.current();
+    
+    // Check if this is an aggregate function (COUNT followed by '(')
+    if (token.type === TokenType.KEYWORD && token.value.toUpperCase() === 'COUNT') {
+      return this.parseAggregateFunction();
+    }
+    
+    return this.parseColumnRef();
+  }
+
+  parseAggregateFunction() {
+    // aggregate_function := COUNT "(" ("*" | column_ref) ")"
+    const funcToken = this.current();
+    const funcName = funcToken.value.toUpperCase();
+    this.expectKeyword('COUNT');
+    this.expect(TokenType.LPAREN);
+
+    let argument;
+    if (this.check(TokenType.STAR)) {
+      this.advance();
+      argument = { type: 'Star' };
+    } else {
+      argument = this.parseColumnRef();
+    }
+
+    this.expect(TokenType.RPAREN);
+
+    return {
+      type: 'AggregateFunction',
+      function: funcName,
+      argument,
+      position: funcToken.start,
+    };
   }
 
   parseTableRef() {
@@ -199,6 +244,25 @@ export class Parser {
     );
   }
 
+  parseGroupByClause() {
+    // group_by_clause := GROUP BY column_ref ("," column_ref)*
+    this.expectKeyword('GROUP');
+    this.expectKeyword('BY');
+
+    const columns = [];
+    columns.push(this.parseColumnRef());
+
+    while (this.check(TokenType.COMMA)) {
+      this.advance();
+      columns.push(this.parseColumnRef());
+    }
+
+    return {
+      type: 'GroupBy',
+      columns,
+    };
+  }
+
   parseOrderClause() {
     // order_clause := ORDER BY column_ref [ASC|DESC]
     this.expectKeyword('ORDER');
@@ -275,7 +339,7 @@ export class Parser {
     const token = this.current();
     
     // Check for unsupported features
-    const unsupportedKeywords = ['GROUP', 'HAVING', 'DISTINCT', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'OR', 'NOT', 'LIKE', 'IN', 'BETWEEN', 'LEFT', 'RIGHT', 'OUTER', 'FULL'];
+    const unsupportedKeywords = ['HAVING', 'DISTINCT', 'SUM', 'AVG', 'MIN', 'MAX', 'OR', 'NOT', 'LIKE', 'IN', 'BETWEEN', 'LEFT', 'RIGHT', 'OUTER', 'FULL'];
     if (token.type === TokenType.KEYWORD && unsupportedKeywords.includes(token.value.toUpperCase())) {
       throw createUnsupportedFeatureError(token.value.toUpperCase(), token.start);
     }

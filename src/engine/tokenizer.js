@@ -22,8 +22,9 @@ export const TokenType = {
 const KEYWORDS = new Set([
   'SELECT', 'FROM', 'WHERE', 'INNER', 'JOIN', 'ON',
   'ORDER', 'BY', 'ASC', 'DESC', 'LIMIT', 'AND',
+  'GROUP', 'COUNT',
   // Unsupported keywords for error detection
-  'GROUP', 'HAVING', 'DISTINCT', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX',
+  'HAVING', 'DISTINCT', 'SUM', 'AVG', 'MIN', 'MAX',
   'OR', 'NOT', 'LIKE', 'IN', 'BETWEEN', 'LEFT', 'RIGHT', 'OUTER', 'FULL',
 ]);
 
