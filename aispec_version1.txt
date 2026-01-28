@@ -1,0 +1,293 @@
+PROJECT: Client-Side SQL SELECT + JOIN Simulator (MVP)
+======================================================
+Goal
+----
+Build a React + Vite + JavaScript web app that simulates a subset of SQL SELECT queries over fixed in-memory source tables. No backend. The MVP must support:
+
+- SELECT <column_list> FROM <table>
+- Optional: INNER JOIN <table> ON <left_identifier> = <right_identifier>
+- Optional: WHERE <predicate> (only AND-chained equality comparisons in MVP)
+- Optional: ORDER BY <identifier> [ASC|DESC]
+- Optional: LIMIT <number>
+
+Constraints / SQL rules for MVP
+-------------------------------
+- Strings MUST be single-quoted: 'like this'
+- Identifiers are bare words (no quoting/backticks): students, surname, student_id
+- Keywords are case-insensitive; identifiers are case-sensitive only if you choose; MVP can treat identifiers case-insensitively for student friendliness, but be consistent.
+- Column references may be:
+  - unqualified: surname
+  - qualified: students.surname
+- If an unqualified column name is ambiguous (exists in more than one joined table), raise an error requiring qualification.
+- Only equality operator in WHERE for MVP: =
+- WHERE in MVP supports:
+  - <identifier> = <literal>
+  - <identifier> = <identifier>
+  - chaining with AND only: a = 1 AND b = 'x'
+- JOIN in MVP: exactly one INNER JOIN maximum (no multiple joins yet).
+- NULL handling: MVP can treat missing values as null and comparisons with null as false; be consistent and document internally.
+- No INSERT/UPDATE/DELETE to source tables. (Temporary tables can be future scope.)
+
+Non-goals for MVP
+-----------------
+- GROUP BY, aggregates, HAVING
+- OR, NOT, parentheses
+- LIKE, IN, BETWEEN
+- Aliases (optional as future scope)
+- Multiple JOINs
+- Subqueries
+- CREATE TEMP TABLE (future scope)
+- Full SQL grammar compatibility
+
+User Experience (MVP UI)
+------------------------
+Single page layout with:
+1) Tables panel: show 2–3 source tables (name + columns + small data grid).
+2) Query editor: textarea input (monospace), with default sample query.
+3) Run button + "Reset" button.
+4) Output panel: results grid + row count; errors shown clearly.
+
+Architecture & Code Quality Requirements
+----------------------------------------
+- Use Vite + React.
+- Use plain JavaScript (no TypeScript) unless otherwise required.
+- Keep the execution engine separate from UI:
+  /src/engine/
+     tokenizer.js
+     parser.js
+     ast.js (optional)
+     executor.js
+     validator.js
+     errors.js
+  /src/data/
+     schema.js
+     sampleData.js
+- Engine must expose a stable API for future expansion:
+  executeQuery({ queryText, tables, schema }) -> { columns, rows, meta }
+  where:
+    columns = array of output column headers (strings)
+    rows = array of arrays (table-like) OR array of objects; choose one and stick to it.
+    meta includes rowCount, executionSteps (optional placeholder), warnings.
+- Errors must be thrown as structured objects:
+  { name: 'SqlError', code: 'AMBIGUOUS_COLUMN', message, position? }
+  Position (index in query string) is optional but preferred for future highlighting.
+
+Data Model Requirements
+-----------------------
+Represent tables as:
+- schema: { tableName: { columns: [{name, type}], primaryKey?, ... } }
+- data: { tableName: [ {col: value, ...}, ... ] }
+
+Include 3 well-designed teaching tables for MVP:
+- students(student_id, forename, surname, tutor_group_id)
+- tutor_groups(tutor_group_id, tutor_name, room)
+- attendance(student_id, session_date, present)
+
+Data values should intentionally create:
+- 1-to-many relationship (groups -> students)
+- some students without attendance rows (to later motivate LEFT JOIN)
+- at least one duplicate surname to show why selecting student_id matters
+
+Parsing Approach (MVP)
+----------------------
+Implement a lightweight tokenizer + recursive-descent parser for the subset.
+Do NOT depend on a full SQL parser library for MVP, unless strictly necessary.
+
+Tokenizer requirements:
+- Produce tokens with type and raw value and start index:
+  - KEYWORD: SELECT, FROM, WHERE, INNER, JOIN, ON, ORDER, BY, ASC, DESC, LIMIT, AND
+  - IDENT: [A-Za-z_][A-Za-z0-9_]* (including table and column names)
+  - DOT: .
+  - COMMA: ,
+  - OP_EQ: =
+  - NUMBER: digits (for LIMIT and numeric literals)
+  - STRING: single-quoted strings with escape support minimal: allow '' to represent a single quote inside string
+  - WS ignored
+- Tokenizer must reject double-quoted strings.
+
+Grammar (subset)
+----------------
+Parse into an AST with fields that allow later expansion.
+Use this grammar:
+
+query :=
+  SELECT select_list
+  FROM table_ref
+  [ join_clause ]
+  [ where_clause ]
+  [ order_clause ]
+  [ limit_clause ]
+
+select_list := "*" | select_item ("," select_item)*
+select_item := column_ref
+column_ref := IDENT [ "." IDENT ]
+
+table_ref := IDENT
+
+join_clause :=
+  [INNER] JOIN IDENT ON column_ref "=" column_ref
+
+where_clause :=
+  WHERE predicate
+predicate :=
+  comparison (AND comparison)*
+comparison :=
+  operand "=" operand
+operand :=
+  column_ref | literal
+literal := NUMBER | STRING
+
+order_clause :=
+  ORDER BY column_ref [ASC|DESC]
+
+limit_clause :=
+  LIMIT NUMBER
+
+AST shape suggestion:
+- { type:'Query', select, from, join, where, orderBy, limit }
+- select: { type:'Select', items:[...], star:boolean }
+- from: { type:'Table', name }
+- join: { type:'Join', joinType:'INNER', table, on:{left,right} }
+- where: { type:'Where', and:[comparison,...] } (store comparisons flat for MVP)
+- comparison: { left:operand, right:operand }
+- operand: { type:'ColumnRef', table?, column } OR { type:'Literal', value, valueType }
+
+Validation Rules
+----------------
+Before execution:
+1) Validate table existence.
+2) Determine available columns in scope:
+   - FROM table columns
+   - If JOIN exists, joined table columns as well
+3) Validate each ColumnRef:
+   - If qualified: table must exist in scope; column must exist in that table.
+   - If unqualified:
+       - Must exist in exactly one table in scope; else error AMBIGUOUS_COLUMN.
+4) Validate SELECT list:
+   - If "*" produce all columns in stable order (FROM columns then JOIN columns).
+5) Validate ORDER BY column exists.
+6) Validate LIMIT is a non-negative integer.
+
+Execution Semantics (MVP)
+-------------------------
+Implement executor pipeline:
+1) Build initial rowset from FROM table:
+   represent each row as a "combined row" structure that keeps table namespaces:
+   Example combined row: { students: {..row..}, tutor_groups: {..row..} }
+   For FROM-only: { students: {...} }
+
+2) Apply JOIN (if present):
+   INNER JOIN semantics:
+   - For each left row in current rowset, for each right row in join table:
+       if evalColumnRef(leftOperand) == evalColumnRef(rightOperand) then produce merged combined row.
+   - Use strict equality for numbers vs strings after parsing:
+       - NUMBER tokens -> JS Number
+       - STRING -> JS String
+   - If types differ, compare by stringifying both OR reject; choose one and keep consistent.
+   Complexity is O(n*m) for MVP; acceptable due to small teaching datasets.
+
+3) Apply WHERE (if present):
+   - Evaluate each comparison in AND list; row passes only if all true.
+   - operand evaluation:
+       - ColumnRef -> look up in combined row object
+       - Literal -> literal value
+   - Only "=" supported.
+
+4) Apply SELECT projection:
+   - Determine output columns list:
+       if "*" => all columns in stable order with headers:
+           use "table.column" for joined columns to avoid ambiguity in display
+       else => columns as requested; for unqualified display header can be just column name if unique; otherwise display table.column.
+   - Produce output rows as arrays aligned with headers.
+
+5) Apply ORDER BY (optional):
+   - Sort output rows based on order key from combined row before projection OR sort projected output if easier.
+   - Default ASC.
+   - Sorting must be stable if possible; if not, acceptable for MVP.
+
+6) Apply LIMIT (optional):
+   - Truncate rows.
+
+Return:
+- { columns:[...], rows:[...], meta:{ rowCount, warnings:[], steps:[] } }
+Where meta.steps can be empty in MVP but keep the property for future "Explain" view.
+
+Error Handling Requirements
+---------------------------
+Provide clear, student-friendly errors. At minimum implement:
+- SYNTAX_ERROR (unexpected token, missing keyword, etc.)
+- UNKNOWN_TABLE
+- UNKNOWN_COLUMN
+- AMBIGUOUS_COLUMN
+- UNSUPPORTED_FEATURE (if they type GROUP BY etc.)
+Each error should include a helpful message and, where possible, token position.
+
+UI Requirements (React)
+-----------------------
+- Use a simple layout: left panel tables, center query editor, right/bottom results.
+- Provide a default query in the editor on load:
+  Example:
+    SELECT students.forename, students.surname, tutor_groups.tutor_name
+    FROM students
+    INNER JOIN tutor_groups ON students.tutor_group_id = tutor_groups.tutor_group_id
+    WHERE tutor_groups.room = 'B12'
+    ORDER BY students.surname ASC
+    LIMIT 20
+
+- "Run" executes engine and shows results; "Reset" restores default query and clears output.
+- Display engine errors in a dedicated error area (red text) without crashing.
+
+Testing / Verification
+----------------------
+Include a small suite of test cases (can be simple JS functions run in dev console or minimal unit tests):
+1) SELECT * FROM students
+2) SELECT surname FROM students WHERE surname = 'Smith'
+3) JOIN query that returns expected rows
+4) Ambiguous column error:
+   SELECT tutor_group_id FROM students INNER JOIN tutor_groups ON ...
+5) Unknown column error:
+   SELECT foo FROM students
+6) Unsupported feature detection:
+   SELECT COUNT(*) FROM students  -> UNSUPPORTED_FEATURE
+
+Future Expansion Hooks (do not implement now, but design for)
+-------------------------------------------------------------
+- Table aliases: FROM students s; JOIN tutor_groups g
+- Multiple JOINs
+- OR, parentheses
+- LEFT JOIN with null-extension
+- DISTINCT
+- GROUP BY, aggregates
+- CREATE TEMP TABLE <name> AS SELECT ...
+- Explain mode: store intermediate rowsets or counts in meta.steps
+- Syntax highlighting / caret-based error markers (needs token positions)
+
+Deliverables
+------------
+- A complete Vite + React project that runs with:
+    npm install
+    npm run dev
+- Clean folder structure (/engine, /data, /components)
+- Readme that states supported SQL subset and provides example queries.
+
+Implementation Order (recommended)
+----------------------------------
+1) Set up Vite + React + basic layout
+2) Build sample schema + data + render the table panel
+3) Tokenizer
+4) Parser -> AST
+5) Validator
+6) Executor (FROM + SELECT)
+7) Add WHERE
+8) Add INNER JOIN
+9) Add ORDER BY + LIMIT
+10) Add error mapping and polish messages
+11) Add basic tests + README
+
+Acceptance Criteria (MVP)
+-------------------------
+- Can run at least 6 test queries successfully (as above).
+- Produces correct output grid for FROM-only and JOIN queries.
+- Errors are readable and do not break UI.
+- Uses single-quoted strings only; bare identifiers only.
+- Engine is modular and ready for extensions.

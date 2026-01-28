@@ -1,0 +1,101 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #e9ecef;
+}
+
+.app-header {
+  background: linear-gradient(135deg, #0066cc 0%, #0052a3 100%);
+  color: white;
+  padding: 20px 30px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.app-header h1 {
+  margin: 0 0 5px 0;
+  font-size: 1.8em;
+  font-weight: 700;
+}
+
+.app-header p {
+  margin: 0;
+  opacity: 0.9;
+  font-size: 1em;
+}
+
+.app-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 30%;
+  background: #f8f9fa;
+  border-right: 1px solid #dee2e6;
+  overflow-y: auto;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.editor-section {
+  height: 40%;
+  min-height: 200px;
+  padding: 20px;
+  padding-bottom: 10px;
+}
+
+.results-section {
+  flex: 1;
+  padding: 10px 20px 20px 20px;
+  overflow: hidden;
+}
+
+.sql-logo {
+  height: 40px;
+  margin-left: 15px;
+  vertical-align: middle;
+}
+
+.exeter-logo {
+  height: 40px;
+  margin-left: 15px;
+  vertical-align: middle;
+}
+
+.in-row {
+  display: flex;
+  align-items: center;
+}
+
+@media (max-width: 1024px) {
+  .app-layout {
+    flex-direction: column;
+  }
+  
+  .sidebar {
+    width: 100%;
+    height: 300px;
+    border-right: none;
+    border-bottom: 1px solid #dee2e6;
+  }
+  
+  .editor-section {
+    height: 300px;
+  }
+}

@@ -1,0 +1,80 @@
+.query-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  overflow: hidden;
+}
+
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  background: #f8f9fa;
+  border-bottom: 2px solid #dee2e6;
+}
+
+.editor-header h2 {
+  margin: 0;
+  color: #333;
+  font-size: 1.3em;
+}
+
+.button-group {
+  display: flex;
+  gap: 10px;
+}
+
+.btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px;
+  font-size: 1em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: #28a745;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #218838;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.btn-secondary {
+  background: #6c757d;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background: #5a6268;
+}
+
+.query-editor textarea {
+  flex: 1;
+  padding: 20px;
+  border: none;
+  font-family: 'Courier New', Consolas, monospace;
+  font-size: 1em;
+  line-height: 1.6;
+  resize: none;
+  outline: none;
+  background: #ffffff;
+}
+
+.query-editor textarea::placeholder {
+  color: #adb5bd;
+}
