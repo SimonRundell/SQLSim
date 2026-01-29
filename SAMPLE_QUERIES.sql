@@ -184,6 +184,103 @@ FROM grades
 GROUP BY student_id, module
 ORDER BY student_id ASC
 
+// ==================== COMPARISON OPERATORS ====================
+
+// 36. Students with high scores (>= 90)
+SELECT students.forename, students.surname, grades.module, grades.score
+FROM students
+INNER JOIN grades ON students.student_id = grades.student_id
+WHERE grades.score >= 90
+ORDER BY grades.score DESC
+
+// 37. Failing grades (< 60)
+SELECT students.forename, students.surname, grades.module, grades.score
+FROM students
+INNER JOIN grades ON students.student_id = grades.student_id
+WHERE grades.score < 60
+
+// 38. Grade boundaries - Distinction (>= 70)
+SELECT students.forename, students.surname, COUNT(*) AS distinctions
+FROM students
+INNER JOIN grades ON students.student_id = grades.student_id
+WHERE grades.score >= 70
+GROUP BY students.forename, students.surname
+ORDER BY COUNT(*) DESC
+
+// 39. Grade boundaries - Pass (>= 40 and < 70)
+SELECT students.forename, students.surname, grades.module, grades.score
+FROM students
+INNER JOIN grades ON students.student_id = grades.student_id
+WHERE grades.score >= 40 AND grades.score < 70
+
+// 40. Students not in room B12
+SELECT students.forename, students.surname, tutor_groups.room
+FROM students
+INNER JOIN tutor_groups ON students.tutor_group_id = tutor_groups.tutor_group_id
+WHERE tutor_groups.room != 'B12'
+
+// 41. Scores between 80 and 90
+SELECT students.forename, students.surname, grades.module, grades.score
+FROM students
+INNER JOIN grades ON students.student_id = grades.student_id
+WHERE grades.score >= 80 AND grades.score <= 90
+ORDER BY grades.score DESC
+
+// ==================== LIKE OPERATOR ====================
+
+// 42. Students whose surname starts with 'S'
+SELECT forename, surname FROM students WHERE surname LIKE 'S%'
+
+// 43. Students whose forename ends with 'e'
+SELECT forename, surname FROM students WHERE forename LIKE '%e'
+
+// 44. Students with 'i' in their forename
+SELECT forename, surname FROM students WHERE forename LIKE '%i%'
+
+// 45. Modules containing 'Data'
+SELECT DISTINCT module FROM grades WHERE module LIKE '%Data%'
+
+// 46. Find 'Programming' or 'Project' modules
+SELECT module, AVG(score)
+FROM grades
+WHERE module LIKE '%Prog%'
+GROUP BY module
+
+// 47. Students with 'son' in surname
+SELECT forename, surname FROM students WHERE surname LIKE '%son%'
+
+// ==================== COMPLEX QUERIES WITH NEW OPERATORS ====================
+
+// 48. High achievers in Database modules
+SELECT students.forename, students.surname, grades.score
+FROM students
+INNER JOIN grades ON students.student_id = grades.student_id
+WHERE grades.module LIKE '%Database%' AND grades.score >= 85
+ORDER BY grades.score DESC
+
+// 49. Count of grades by performance level
+SELECT 
+  CASE 
+    WHEN score >= 70 THEN 'Distinction'
+    WHEN score >= 40 THEN 'Pass'
+    ELSE 'Fail'
+  END AS grade_level,
+  COUNT(*)
+FROM grades
+WHERE score >= 70
+GROUP BY score >= 70
+
+// Note: CASE statements not supported, use separate queries:
+SELECT COUNT(*) AS distinctions FROM grades WHERE score >= 70
+SELECT COUNT(*) AS passes FROM grades WHERE score >= 40 AND score < 70
+SELECT COUNT(*) AS fails FROM grades WHERE score < 40
+
+// 50. Students with perfect scores
+SELECT students.forename, students.surname, grades.module
+FROM students
+INNER JOIN grades ON students.student_id = grades.student_id
+WHERE grades.score = 100
+
 // ==================== ERROR EXAMPLES ====================
 
 // These should produce errors - try them to see error handling!

@@ -21,13 +21,6 @@ export const schema = {
     ],
     primaryKey: 'tutor_group_id',
   },
-  attendance: {
-    columns: [
-      { name: 'student_id', type: 'number' },
-      { name: 'session_date', type: 'string' },
-      { name: 'present', type: 'string' },
-    ],
-  },
   grades: {
     columns: [
       { name: 'student_id', type: 'number' },

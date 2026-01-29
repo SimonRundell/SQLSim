@@ -12,6 +12,12 @@
   margin-bottom: 15px;
 }
 
+.results-header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
 .results-panel h2 {
   margin: 0;
   color: #333;
@@ -25,6 +31,30 @@
   border-radius: 4px;
   font-weight: 600;
   font-size: 0.9em;
+}
+
+.print-button {
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.9em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.print-button:hover {
+  background: #218838;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+  transform: translateY(-1px);
+}
+
+.print-button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .no-results {

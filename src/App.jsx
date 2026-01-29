@@ -3,6 +3,7 @@ import './App.css'
 import TablesPanel from './components/TablesPanel'
 import QueryEditor from './components/QueryEditor'
 import ResultsPanel from './components/ResultsPanel'
+import GuideDrawer from './components/GuideDrawer'
 import { executeQuery } from './engine/executor'
 import { schema } from './data/schema'
 import { sampleData } from './data/sampleData'
@@ -19,16 +20,35 @@ function App() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
+  
+  // Maintain mutable state for schema and data
+  const [currentSchema, setCurrentSchema] = useState(() => ({ ...schema }));
+  const [currentData, setCurrentData] = useState(() => {
+    // Deep copy sample data
+    const dataCopy = {};
+    for (const table in sampleData) {
+      dataCopy[table] = sampleData[table].map(row => ({ ...row }));
+    }
+    return dataCopy;
+  });
 
   const handleRun = () => {
     try {
       setError(null);
       const queryResult = executeQuery({
         queryText: query,
-        tables: sampleData,
-        schema: schema,
+        tables: currentData,
+        schema: currentSchema,
       });
       setResult(queryResult);
+      
+      // If the query modified data, update state
+      if (queryResult.meta && queryResult.meta.modified) {
+        // Force re-render by creating new references
+        setCurrentSchema({ ...currentSchema });
+        setCurrentData({ ...currentData });
+      }
     } catch (err) {
       setError({
         code: err.code || 'ERROR',
@@ -43,6 +63,14 @@ function App() {
     setQuery(DEFAULT_QUERY);
     setResult(null);
     setError(null);
+    
+    // Reset schema and data to original state
+    setCurrentSchema({ ...schema });
+    const dataCopy = {};
+    for (const table in sampleData) {
+      dataCopy[table] = sampleData[table].map(row => ({ ...row }));
+    }
+    setCurrentData(dataCopy);
   };
 
   return (
@@ -58,7 +86,7 @@ function App() {
       
       <div className="app-layout">
         <aside className="sidebar">
-          <TablesPanel tables={sampleData} schema={schema} />
+          <TablesPanel tables={currentData} schema={currentSchema} />
         </aside>
         
         <main className="main-content">
@@ -72,10 +100,25 @@ function App() {
           </div>
           
           <div className="results-section">
-            <ResultsPanel result={result} error={error} />
+            <ResultsPanel result={result} error={error} query={query} />
           </div>
         </main>
       </div>
+
+      {/* Floating Help Button */}
+      <button 
+        className="help-button" 
+        onClick={() => setIsGuideOpen(true)}
+        title="Open Student Guide"
+      >
+        📚 Guide
+      </button>
+
+      {/* Guide Drawer */}
+      <GuideDrawer 
+        isOpen={isGuideOpen} 
+        onClose={() => setIsGuideOpen(false)} 
+      />
 
       {isModalOpen && (
         <div className="modal-overlay" onClick={() => setIsModalOpen(false)}>

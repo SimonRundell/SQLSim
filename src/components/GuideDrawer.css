@@ -1,0 +1,235 @@
+/* Guide Drawer Styles */
+
+.drawer-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+  animation: fadeIn 0.3s ease;
+}
+
+.guide-drawer {
+  position: fixed;
+  top: 0;
+  right: -50%;
+  width: 50%;
+  height: 100vh;
+  background: white;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  transition: right 0.3s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.guide-drawer.open {
+  right: 0;
+}
+
+.drawer-header {
+  padding: 20px 25px;
+  border-bottom: 2px solid #e9ecef;
+  background: linear-gradient(135deg, #0066cc 0%, #0052a3 100%);
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.drawer-header h2 {
+  margin: 0;
+  font-size: 1.5em;
+  font-weight: 600;
+}
+
+.drawer-close-btn {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 2em;
+  cursor: pointer;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background 0.2s;
+}
+
+.drawer-close-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.drawer-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 25px;
+  line-height: 1.6;
+}
+
+.drawer-content section {
+  margin-bottom: 30px;
+}
+
+.drawer-content h3 {
+  color: #0066cc;
+  font-size: 1.3em;
+  margin-top: 0;
+  margin-bottom: 15px;
+  border-bottom: 2px solid #e9ecef;
+  padding-bottom: 8px;
+}
+
+.drawer-content h4 {
+  color: #0052a3;
+  font-size: 1.1em;
+  margin-top: 20px;
+  margin-bottom: 10px;
+}
+
+.drawer-content p {
+  margin: 10px 0;
+  color: #333;
+}
+
+.drawer-content ul,
+.drawer-content ol {
+  margin: 10px 0;
+  padding-left: 25px;
+}
+
+.drawer-content li {
+  margin: 8px 0;
+}
+
+.drawer-content code {
+  background: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.9em;
+  color: #d63384;
+}
+
+.code-block {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-left: 4px solid #0066cc;
+  padding: 15px;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.9em;
+  line-height: 1.5;
+  margin: 10px 0;
+}
+
+.rule-box {
+  border-radius: 8px;
+  padding: 15px;
+  margin: 15px 0;
+}
+
+.rule-box.do {
+  background: #d1f4e0;
+  border-left: 4px solid #28a745;
+}
+
+.rule-box.dont {
+  background: #f8d7da;
+  border-left: 4px solid #dc3545;
+}
+
+.rule-box strong {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 1.05em;
+}
+
+.rule-box ul {
+  margin: 5px 0;
+  padding-left: 20px;
+}
+
+.example {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 15px;
+  margin: 15px 0;
+}
+
+.example p {
+  margin: 0 0 10px 0;
+  font-weight: 500;
+}
+
+.error-example {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 8px;
+  padding: 15px;
+  margin: 15px 0;
+}
+
+.error-example p {
+  margin: 10px 0 5px 0;
+  font-weight: 500;
+}
+
+.warning-box {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-left: 4px solid #ff9800;
+  border-radius: 8px;
+  padding: 15px;
+  margin: 15px 0;
+  color: #856404;
+}
+
+.warning-box strong {
+  color: #856404;
+}
+
+.footer {
+  text-align: center;
+  padding: 20px;
+  background: #f8f9fa;
+  border-top: 2px solid #e9ecef;
+  margin-top: 20px;
+}
+
+.footer p {
+  margin: 0;
+  font-size: 1.1em;
+  color: #0066cc;
+}
+
+/* Scrollbar styling */
+.drawer-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.drawer-content::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.drawer-content::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.drawer-content::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .guide-drawer {
+    width: 100%;
+    right: -100%;
+  }
+}

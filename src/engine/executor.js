@@ -9,13 +9,35 @@ import { validate } from './validator.js';
 import { schema } from '../data/schema.js';
 
 export class Executor {
-  constructor(ast, data, validator) {
+  constructor(ast, data, validator, schema) {
     this.ast = ast;
     this.data = data;
     this.validator = validator;
+    this.schema = schema;
   }
 
   execute() {
+    // Route to appropriate execution method based on statement type
+    if (this.ast.type === 'Query') {
+      return this.executeQuery();
+    } else if (this.ast.type === 'CreateTable') {
+      return this.executeCreateTable();
+    } else if (this.ast.type === 'AlterTable') {
+      return this.executeAlterTable();
+    } else if (this.ast.type === 'DropTable') {
+      return this.executeDropTable();
+    } else if (this.ast.type === 'Insert') {
+      return this.executeInsert();
+    } else if (this.ast.type === 'Update') {
+      return this.executeUpdate();
+    } else if (this.ast.type === 'Delete') {
+      return this.executeDelete();
+    } else {
+      throw new Error(`Unknown statement type: ${this.ast.type}`);
+    }
+  }
+
+  executeQuery() {
     // Step 1: Build initial rowset from FROM table
     let rowset = this.buildFromRowset();
 
@@ -102,8 +124,9 @@ export class Executor {
         // Evaluate join condition
         const leftValue = this.evalOperand(joinCondition.left, combinedRow);
         const rightValue = this.evalOperand(joinCondition.right, combinedRow);
+        const operator = joinCondition.operator || '=';
 
-        if (this.compareValues(leftValue, rightValue)) {
+        if (this.compareValues(leftValue, rightValue, operator)) {
           result.push(combinedRow);
         }
       }
@@ -118,8 +141,9 @@ export class Executor {
       for (const comparison of this.ast.where.and) {
         const leftValue = this.evalOperand(comparison.left, row);
         const rightValue = this.evalOperand(comparison.right, row);
+        const operator = comparison.operator || '=';
 
-        if (!this.compareValues(leftValue, rightValue)) {
+        if (!this.compareValues(leftValue, rightValue, operator)) {
           return false;
         }
       }
@@ -160,21 +184,31 @@ export class Executor {
     // Determine column names and what to compute
     for (const item of this.ast.select.items) {
       if (item.type === 'ColumnRef') {
-        const tableName = item.table || item.resolvedTable;
-        if (this.validator.tablesInScope.length > 1 && !item.table) {
-          columns.push(`${tableName}.${item.column}`);
-        } else if (item.table) {
-          columns.push(`${item.table}.${item.column}`);
+        // Check if there's an alias
+        if (item.alias) {
+          columns.push(item.alias);
         } else {
-          columns.push(item.column);
+          const tableName = item.table || item.resolvedTable;
+          if (this.validator.tablesInScope.length > 1 && !item.table) {
+            columns.push(`${tableName}.${item.column}`);
+          } else if (item.table) {
+            columns.push(`${item.table}.${item.column}`);
+          } else {
+            columns.push(item.column);
+          }
         }
       } else if (item.type === 'AggregateFunction') {
-        // Build aggregate column name
-        if (item.argument.type === 'Star') {
-          columns.push(`${item.function}(*)`);
+        // Check if there's an alias
+        if (item.alias) {
+          columns.push(item.alias);
         } else {
-          const argCol = item.argument.column;
-          columns.push(`${item.function}(${argCol})`);
+          // Build aggregate column name
+          if (item.argument.type === 'Star') {
+            columns.push(`${item.function}(*)`);
+          } else {
+            const argCol = item.argument.column;
+            columns.push(`${item.function}(${argCol})`);
+          }
         }
       }
     }
@@ -276,14 +310,19 @@ export class Executor {
 
       // Build display names for columns
       for (const colRef of columnRefs) {
-        const tableName = colRef.table || colRef.resolvedTable;
-        if (this.validator.tablesInScope.length > 1 && !colRef.table) {
-          // For unqualified columns in multi-table query, show table.column if helpful
-          columns.push(`${tableName}.${colRef.column}`);
-        } else if (colRef.table) {
-          columns.push(`${colRef.table}.${colRef.column}`);
+        // Check if there's an alias
+        if (colRef.alias) {
+          columns.push(colRef.alias);
         } else {
-          columns.push(colRef.column);
+          const tableName = colRef.table || colRef.resolvedTable;
+          if (this.validator.tablesInScope.length > 1 && !colRef.table) {
+            // For unqualified columns in multi-table query, show table.column if helpful
+            columns.push(`${tableName}.${colRef.column}`);
+          } else if (colRef.table) {
+            columns.push(`${colRef.table}.${colRef.column}`);
+          } else {
+            columns.push(colRef.column);
+          }
         }
       }
 
@@ -350,23 +389,355 @@ export class Executor {
     return null;
   }
 
-  compareValues(left, right) {
+  compareValues(left, right, operator = '=') {
     // Handle null/undefined
     if (left === null || left === undefined || right === null || right === undefined) {
       return false;
     }
 
-    // Type coercion: if both are numbers or can be numbers, compare as numbers
-    // Otherwise compare as strings
-    const leftNum = Number(left);
-    const rightNum = Number(right);
-
-    if (!isNaN(leftNum) && !isNaN(rightNum)) {
-      return leftNum === rightNum;
+    // Handle LIKE operator
+    if (operator === 'LIKE') {
+      const pattern = String(right);
+      const value = String(left);
+      
+      // Convert SQL LIKE pattern to regex
+      // % matches any sequence of characters
+      // Escape special regex characters except %
+      const regexPattern = pattern
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')  // Escape regex special chars
+        .replace(/%/g, '.*');  // Replace % with .*
+      
+      const regex = new RegExp(`^${regexPattern}$`, 'i'); // Case-insensitive
+      return regex.test(value);
     }
 
-    // String comparison
-    return String(left) === String(right);
+    // Type coercion: if both are numbers or can be numbers, compare as numbers
+    const leftNum = Number(left);
+    const rightNum = Number(right);
+    const useNumeric = !isNaN(leftNum) && !isNaN(rightNum);
+
+    const leftVal = useNumeric ? leftNum : String(left);
+    const rightVal = useNumeric ? rightNum : String(right);
+
+    // Apply comparison operator
+    switch (operator) {
+      case '=':
+        return leftVal === rightVal;
+      case '!=':
+      case '<>':
+        return leftVal !== rightVal;
+      case '<':
+        return leftVal < rightVal;
+      case '<=':
+        return leftVal <= rightVal;
+      case '>':
+        return leftVal > rightVal;
+      case '>=':
+        return leftVal >= rightVal;
+      default:
+        return false;
+    }
+  }
+
+  executeCreateTable() {
+    const { tableName, columns } = this.ast;
+    
+    // Check if table already exists
+    if (this.schema[tableName] || this.data[tableName]) {
+      throw new Error(`Table '${tableName}' already exists`);
+    }
+    
+    // Add to schema
+    this.schema[tableName] = {
+      columns: columns,
+      isUserCreated: true,
+    };
+    
+    // Add empty data array
+    this.data[tableName] = [];
+    
+    return {
+      columns: ['Result'],
+      rows: [[`Table '${tableName}' created successfully with ${columns.length} column(s)`]],
+      meta: {
+        rowCount: 0,
+        warnings: [],
+        modified: true,
+      },
+    };
+  }
+
+  executeAlterTable() {
+    const { tableName, columnName, columnType } = this.ast;
+    
+    // Check if table exists
+    if (!this.schema[tableName]) {
+      throw new Error(`Table '${tableName}' does not exist`);
+    }
+    
+    // Check if it's a protected table
+    const protectedTables = ['students', 'tutor_groups', 'grades'];
+    if (protectedTables.includes(tableName)) {
+      throw new Error(`Cannot alter protected table '${tableName}'`);
+    }
+    
+    // Check if column already exists
+    if (this.schema[tableName].columns.some(col => col.name === columnName)) {
+      throw new Error(`Column '${columnName}' already exists in table '${tableName}'`);
+    }
+    
+    // Add column to schema
+    this.schema[tableName].columns.push({ name: columnName, type: columnType });
+    
+    // Add column to existing data rows with null values
+    if (this.data[tableName]) {
+      for (const row of this.data[tableName]) {
+        row[columnName] = null;
+      }
+    }
+    
+    return {
+      columns: ['Result'],
+      rows: [[`Column '${columnName}' added to table '${tableName}'`]],
+      meta: {
+        rowCount: 0,
+        warnings: [],
+        modified: true,
+      },
+    };
+  }
+
+  executeDropTable() {
+    const { tableName } = this.ast;
+    
+    // Check if table exists
+    if (!this.schema[tableName]) {
+      throw new Error(`Table '${tableName}' does not exist`);
+    }
+    
+    // Check if it's a protected table
+    const protectedTables = ['students', 'tutor_groups', 'grades'];
+    if (protectedTables.includes(tableName)) {
+      throw new Error(`Cannot drop protected table '${tableName}'`);
+    }
+    
+    // Remove from schema
+    delete this.schema[tableName];
+    
+    // Remove data
+    delete this.data[tableName];
+    
+    return {
+      columns: ['Result'],
+      rows: [[`Table '${tableName}' dropped successfully`]],
+      meta: {
+        rowCount: 0,
+        warnings: [],
+        modified: true,
+      },
+    };
+  }
+
+  executeInsert() {
+    const { tableName, columns, values } = this.ast;
+    
+    // Check if table exists
+    if (!this.schema[tableName]) {
+      throw new Error(`Table '${tableName}' does not exist`);
+    }
+    
+    // Check if it's a protected table
+    const protectedTables = ['students', 'tutor_groups', 'grades'];
+    if (protectedTables.includes(tableName)) {
+      throw new Error(`Cannot insert into protected table '${tableName}'`);
+    }
+    
+    // Validate columns exist
+    const tableColumns = this.schema[tableName].columns.map(col => col.name);
+    for (const col of columns) {
+      if (!tableColumns.includes(col)) {
+        throw new Error(`Column '${col}' does not exist in table '${tableName}'`);
+      }
+    }
+    
+    // Validate value count matches column count
+    if (columns.length !== values.length) {
+      throw new Error(`Column count (${columns.length}) does not match value count (${values.length})`);
+    }
+    
+    // Build the new row
+    const newRow = {};
+    for (let i = 0; i < columns.length; i++) {
+      newRow[columns[i]] = values[i].value;
+    }
+    
+    // Add null for any missing columns
+    for (const col of tableColumns) {
+      if (!(col in newRow)) {
+        newRow[col] = null;
+      }
+    }
+    
+    // Insert the row
+    this.data[tableName].push(newRow);
+    
+    return {
+      columns: ['Result'],
+      rows: [[`1 row inserted into '${tableName}'`]],
+      meta: {
+        rowCount: 1,
+        warnings: [],
+        modified: true,
+      },
+    };
+  }
+
+  executeUpdate() {
+    const { tableName, assignments, where } = this.ast;
+    
+    // Check if table exists
+    if (!this.schema[tableName]) {
+      throw new Error(`Table '${tableName}' does not exist`);
+    }
+    
+    // Check if it's a protected table
+    const protectedTables = ['students', 'tutor_groups', 'grades'];
+    if (protectedTables.includes(tableName)) {
+      throw new Error(`Cannot update protected table '${tableName}'`);
+    }
+    
+    // Validate columns exist
+    const tableColumns = this.schema[tableName].columns.map(col => col.name);
+    for (const assignment of assignments) {
+      if (!tableColumns.includes(assignment.column)) {
+        throw new Error(`Column '${assignment.column}' does not exist in table '${tableName}'`);
+      }
+    }
+    
+    // Get rows to update
+    let rowsToUpdate = this.data[tableName] || [];
+    
+    // Apply WHERE filter if present
+    if (where) {
+      rowsToUpdate = rowsToUpdate.filter(row => {
+        // Convert row to combined format for evaluation
+        const combinedRow = { [tableName]: row };
+        
+        for (const comparison of where.and) {
+          const leftValue = this.evalOperandForModification(comparison.left, combinedRow, tableName);
+          const rightValue = this.evalOperandForModification(comparison.right, combinedRow, tableName);
+          const operator = comparison.operator || '=';
+          
+          if (!this.compareValues(leftValue, rightValue, operator)) {
+            return false;
+          }
+        }
+        return true;
+      });
+    }
+    
+    // Update the rows
+    let updateCount = 0;
+    for (const row of rowsToUpdate) {
+      for (const assignment of assignments) {
+        row[assignment.column] = assignment.value.value;
+      }
+      updateCount++;
+    }
+    
+    return {
+      columns: ['Result'],
+      rows: [[`${updateCount} row(s) updated in '${tableName}'`]],
+      meta: {
+        rowCount: updateCount,
+        warnings: [],
+        modified: true,
+      },
+    };
+  }
+
+  executeDelete() {
+    const { tableName, where } = this.ast;
+    
+    // Check if table exists
+    if (!this.schema[tableName]) {
+      throw new Error(`Table '${tableName}' does not exist`);
+    }
+    
+    // Check if it's a protected table
+    const protectedTables = ['students', 'tutor_groups', 'grades'];
+    if (protectedTables.includes(tableName)) {
+      throw new Error(`Cannot delete from protected table '${tableName}'`);
+    }
+    
+    const tableData = this.data[tableName] || [];
+    
+    if (!where) {
+      // Delete all rows
+      const deleteCount = tableData.length;
+      this.data[tableName] = [];
+      return {
+        columns: ['Result'],
+        rows: [[`${deleteCount} row(s) deleted from '${tableName}'`]],
+        meta: {
+          rowCount: deleteCount,
+          warnings: [],
+          modified: true,
+        },
+      };
+    }
+    
+    // Apply WHERE filter to find rows to keep
+    const rowsToKeep = [];
+    let deleteCount = 0;
+    
+    for (const row of tableData) {
+      // Convert row to combined format for evaluation
+      const combinedRow = { [tableName]: row };
+      
+      let shouldDelete = true;
+      for (const comparison of where.and) {
+        const leftValue = this.evalOperandForModification(comparison.left, combinedRow, tableName);
+        const rightValue = this.evalOperandForModification(comparison.right, combinedRow, tableName);
+        const operator = comparison.operator || '=';
+        
+        if (!this.compareValues(leftValue, rightValue, operator)) {
+          shouldDelete = false;
+          break;
+        }
+      }
+      
+      if (shouldDelete) {
+        deleteCount++;
+      } else {
+        rowsToKeep.push(row);
+      }
+    }
+    
+    this.data[tableName] = rowsToKeep;
+    
+    return {
+      columns: ['Result'],
+      rows: [[`${deleteCount} row(s) deleted from '${tableName}'`]],
+      meta: {
+        rowCount: deleteCount,
+        warnings: [],
+        modified: true,
+      },
+    };
+  }
+
+  evalOperandForModification(operand, combinedRow, tableName) {
+    if (operand.type === 'Literal') {
+      return operand.value;
+    }
+
+    if (operand.type === 'ColumnRef') {
+      const table = operand.table || tableName;
+      return combinedRow[table][operand.column];
+    }
+
+    return null;
   }
 }
 
@@ -381,11 +752,14 @@ export function executeQuery({ queryText, tables, schema: schemaObj }) {
     // Parse
     const ast = parse(tokens);
 
-    // Validate
-    const validator = validate(ast, schemaObj || schema);
+    // For DDL and DML statements, we don't validate with the old validator
+    const needsValidation = ast.type === 'Query';
+    
+    // Validate only for SELECT queries
+    const validator = needsValidation ? validate(ast, schemaObj || schema) : null;
 
     // Execute
-    const executor = new Executor(ast, tables, validator);
+    const executor = new Executor(ast, tables, validator, schemaObj || schema);
     return executor.execute();
   } catch (error) {
     // Re-throw SQL errors as-is

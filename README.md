@@ -49,18 +49,18 @@ Note: All aggregate functions except COUNT(*) require a column name and work onl
 
 ### Operators
 
-- **WHERE clause**: Onlfour teaching tables:
+- **Comparison operators**: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`
+- **Pattern matching**: `LIKE` with `%` wildcard (e.g., `name LIKE 'S%'` for names starting with S)
+- **Logic**: Only `AND` (no OR, NOT, or parentheses)
+
+### Sample Tables
+
+The simulator includes four teaching tables:
 
 1. **students** (student_id, forename, surname, tutor_group_id)
 2. **tutor_groups** (tutor_group_id, tutor_name, room)
 3. **attendance** (student_id, session_date, present)
-4. **grades** (student_id, module, paper, score
-
-The simulator includes three teaching tables:
-
-1. **students** (student_id, forename, surname, tutor_group_id)
-2. **tutor_groups** (tutor_group_id, tutor_name, room)
-3. **attendance** (student_id, session_date, present)
+4. **grades** (student_id, module, paper, score)
 
 ## Example Queries
 
@@ -123,7 +123,8 @@ ORDER BY COUNT(*) DESC
 SELECT surname, COUNT(*) 
 FROM students 
 WHERE tutor_group_id = 1
-GRO
+GROUP BY surname
+```
 
 ### 10. Aggregate Functions
 ```sql
@@ -142,7 +143,37 @@ FROM students
 INNER JOIN grades ON students.student_id = grades.student_id
 GROUP BY students.forename, students.surname
 ORDER BY AVG(grades.score) DESC
-```UP BY surname
+```
+
+### 11. Comparison Operators
+```sql
+-- High scores (>= 90)
+SELECT students.forename, students.surname, grades.score
+FROM students
+INNER JOIN grades ON students.student_id = grades.student_id
+WHERE grades.score >= 90
+
+-- Grade boundaries - Distinction level
+SELECT students.forename, students.surname, COUNT(*) AS distinctions
+FROM students
+INNER JOIN grades ON students.student_id = grades.student_id
+WHERE grades.score >= 70
+GROUP BY students.forename, students.surname
+```
+
+### 12. LIKE Pattern Matching
+```sql
+-- Students whose surname starts with 'S'
+SELECT forename, surname FROM students WHERE surname LIKE 'S%'
+
+-- Modules containing 'Data'
+SELECT module, AVG(score)
+FROM grades
+WHERE module LIKE '%Data%'
+GROUP BY module
+
+-- Students with 'son' in their surname
+SELECT forename, surname FROM students WHERE surname LIKE '%son%'
 ```
 
 ## Getting Started
@@ -155,7 +186,7 @@ npm install
 
 ### Development
 
-```bashHAVIN
+```bash
 npm run dev
 ```
 
@@ -175,7 +206,7 @@ The simulator provides clear, student-friendly error messages:
 - **UNKNOWN_TABLE**: Table doesn't exist
 - **UNKNOWN_COLUMN**: Column not found in any accessible table
 - **AMBIGUOUS_COLUMN**: Column exists in multiple tables (needs qualification)
-- **UNSUPPORTED_FEATURE**: Feature not yet implemented (e.g., LEFT JOIN, SUM, AVG)
+- **UNSUPPORTED_FEATURE**: Feature not yet implemented (e.g., LEFT JOIN, subqueries)
 
 ## Architecture
 

@@ -3,7 +3,6 @@
  * Validates the AST against the schema before execution
  */
 
-import { hasTable, hasColumn, getTableColumns } from '../data/schema.js';
 import {
   createUnknownTableError,
   createUnknownColumnError,
@@ -18,16 +17,32 @@ export class Validator {
     this.tablesInScope = [];
   }
 
+  hasTable(tableName) {
+    return tableName in this.schema;
+  }
+
+  hasColumn(tableName, columnName) {
+    const tableSchema = this.schema[tableName];
+    if (!tableSchema) return false;
+    return tableSchema.columns.some(col => col.name === columnName);
+  }
+
+  getTableColumns(tableName) {
+    const tableSchema = this.schema[tableName];
+    if (!tableSchema) return [];
+    return tableSchema.columns.map(col => col.name);
+  }
+
   validate() {
     // Validate FROM table
-    if (!hasTable(this.ast.from.name)) {
+    if (!this.hasTable(this.ast.from.name)) {
       throw createUnknownTableError(this.ast.from.name);
     }
     this.tablesInScope.push(this.ast.from.name);
 
     // Validate JOIN table if present
     if (this.ast.join) {
-      if (!hasTable(this.ast.join.table)) {
+      if (!this.hasTable(this.ast.join.table)) {
         throw createUnknownTableError(this.ast.join.table);
       }
       this.tablesInScope.push(this.ast.join.table);
@@ -80,7 +95,7 @@ export class Validator {
       if (!this.tablesInScope.includes(columnRef.table)) {
         throw createUnknownTableError(columnRef.table, columnRef.position);
       }
-      if (!hasColumn(columnRef.table, columnRef.column)) {
+      if (!this.hasColumn(columnRef.table, columnRef.column)) {
         throw createUnknownColumnError(
           columnRef.column,
           columnRef.table,
@@ -90,7 +105,7 @@ export class Validator {
     } else {
       // Unqualified column reference: must exist in exactly one table
       const matchingTables = this.tablesInScope.filter(table =>
-        hasColumn(table, columnRef.column)
+        this.hasColumn(table, columnRef.column)
       );
 
       if (matchingTables.length === 0) {
@@ -155,7 +170,7 @@ export class Validator {
     const columns = [];
     
     for (const tableName of this.tablesInScope) {
-      const tableColumns = getTableColumns(tableName);
+      const tableColumns = this.getTableColumns(tableName);
       for (const col of tableColumns) {
         columns.push({
           table: tableName,

@@ -10,22 +10,34 @@ export const TokenType = {
   IDENT: 'IDENT',
   DOT: 'DOT',
   COMMA: 'COMMA',
+  SEMICOLON: 'SEMICOLON',
   OP_EQ: 'OP_EQ',
+  OP_NE: 'OP_NE',
+  OP_LT: 'OP_LT',
+  OP_LE: 'OP_LE',
+  OP_GT: 'OP_GT',
+  OP_GE: 'OP_GE',
   NUMBER: 'NUMBER',
   STRING: 'STRING',
   LPAREN: 'LPAREN',
   RPAREN: 'RPAREN',
   STAR: 'STAR',
+  PERCENT: 'PERCENT',
   EOF: 'EOF',
 };
 
 const KEYWORDS = new Set([
   'SELECT', 'FROM', 'WHERE', 'INNER', 'JOIN', 'ON',
   'ORDER', 'BY', 'ASC', 'DESC', 'LIMIT', 'AND',
-  'GROUP', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX',
+  'GROUP', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'LIKE', 'AS',
+  // Boolean literals
+  'TRUE', 'FALSE',
+  // DDL and DML keywords
+  'CREATE', 'ALTER', 'DROP', 'TABLE', 'ADD', 'COLUMN',
+  'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE',
   // Unsupported keywords for error detection
   'HAVING', 'DISTINCT',
-  'OR', 'NOT', 'LIKE', 'IN', 'BETWEEN', 'LEFT', 'RIGHT', 'OUTER', 'FULL',
+  'OR', 'NOT', 'IN', 'BETWEEN', 'LEFT', 'RIGHT', 'OUTER', 'FULL',
 ]);
 
 export class Token {
@@ -54,14 +66,46 @@ export class Tokenizer {
       if (char === ',' ) {
         this.tokens.push(new Token(TokenType.COMMA, ',', this.pos, this.pos + 1));
         this.pos++;
+      } else if (char === ';') {
+        this.tokens.push(new Token(TokenType.SEMICOLON, ';', this.pos, this.pos + 1));
+        this.pos++;
       } else if (char === '.') {
         this.tokens.push(new Token(TokenType.DOT, '.', this.pos, this.pos + 1));
         this.pos++;
       } else if (char === '=') {
         this.tokens.push(new Token(TokenType.OP_EQ, '=', this.pos, this.pos + 1));
         this.pos++;
+      } else if (char === '!') {
+        if (this.pos + 1 < this.input.length && this.input[this.pos + 1] === '=') {
+          this.tokens.push(new Token(TokenType.OP_NE, '!=', this.pos, this.pos + 2));
+          this.pos += 2;
+        } else {
+          throw createSyntaxError('Unexpected character: !', this.pos);
+        }
+      } else if (char === '<') {
+        if (this.pos + 1 < this.input.length && this.input[this.pos + 1] === '=') {
+          this.tokens.push(new Token(TokenType.OP_LE, '<=', this.pos, this.pos + 2));
+          this.pos += 2;
+        } else if (this.pos + 1 < this.input.length && this.input[this.pos + 1] === '>') {
+          this.tokens.push(new Token(TokenType.OP_NE, '<>', this.pos, this.pos + 2));
+          this.pos += 2;
+        } else {
+          this.tokens.push(new Token(TokenType.OP_LT, '<', this.pos, this.pos + 1));
+          this.pos++;
+        }
+      } else if (char === '>') {
+        if (this.pos + 1 < this.input.length && this.input[this.pos + 1] === '=') {
+          this.tokens.push(new Token(TokenType.OP_GE, '>=', this.pos, this.pos + 2));
+          this.pos += 2;
+        } else {
+          this.tokens.push(new Token(TokenType.OP_GT, '>', this.pos, this.pos + 1));
+          this.pos++;
+        }
       } else if (char === '*') {
         this.tokens.push(new Token(TokenType.STAR, '*', this.pos, this.pos + 1));
+        this.pos++;
+      } else if (char === '%') {
+        this.tokens.push(new Token(TokenType.PERCENT, '%', this.pos, this.pos + 1));
         this.pos++;
       } else if (char === '(') {
         this.tokens.push(new Token(TokenType.LPAREN, '(', this.pos, this.pos + 1));
