@@ -44,11 +44,12 @@ Contains 3 tutor groups with columns:
 - `tutor_name` - Name of the tutor
 - `room` - Room location
 
-### ✅ attendance
-Contains 8 attendance records with columns:
+### 📊 grades
+Contains assessment scores with columns:
 - `student_id` - Links to students table
-- `session_date` - Date of session
-- `present` - 'Y' or 'N'
+- `module` - Module name
+- `paper` - Paper number
+- `score` - Numeric score
 
 ## Writing Queries
 
@@ -58,11 +59,13 @@ Contains 8 attendance records with columns:
 - Use single quotes for strings: `'Smith'`
 - Use bare column names: `surname`
 - Keywords can be any case: `SELECT`, `select`, `Select`
+- Use DISTINCT when you want unique rows: `SELECT DISTINCT tutor_group_id FROM students`
+- End with a semicolon if you like: `SELECT * FROM students;` (optional)
 
 ❌ **DON'T DO THIS:**
-- Double quotes: `"Smith"` ← Will cause an error!
+- Double quotes: `"Smith"` ← Use single quotes instead
 - Backticks: `` `surname` `` ← Not supported
-- Operators other than `=`: `>`, `<`, `LIKE` ← Not in MVP
+- OR / NOT / IN / BETWEEN ← Not supported yet
 
 ### Query Structure
 
@@ -118,6 +121,11 @@ WHERE tutor_groups.room = 'A5'
 SELECT forename, surname FROM students ORDER BY surname ASC
 ```
 
+**7. Get unique tutor groups:**
+```sql
+SELECT DISTINCT tutor_group_id FROM students ORDER BY tutor_group_id
+```
+
 ### Advanced Queries
 
 **7. Attendance records with student names:**
@@ -134,6 +142,34 @@ SELECT forename, surname, tutor_group_id
 FROM students 
 WHERE tutor_group_id = 1 AND surname = 'Smith'
 ```
+
+**9. Boolean + aggregate example:**
+```sql
+SELECT COUNT(*) AS total_students
+FROM students
+WHERE TRUE
+```
+
+## Working with Your Own Tables
+
+Create tables with constraints and types:
+
+```sql
+CREATE TABLE tasks (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  title VARCHAR(100) NOT NULL,
+  done BOOLEAN NOT NULL
+);
+
+INSERT INTO tasks (title, done) VALUES ('Write SQL', FALSE);
+INSERT INTO tasks (title, done) VALUES ('Celebrate', TRUE);
+
+SELECT DISTINCT done FROM tasks;
+```
+
+- **Types:** INT/DECIMAL/FLOAT/NUMERIC → numbers, VARCHAR/CHAR/TEXT → strings, BOOLEAN for true/false
+- **Constraints:** PRIMARY KEY + AUTO_INCREMENT make a unique, non-null id; use NOT NULL to require values; NULL is allowed when you declare it or leave it unconstrained
+- **Protected tables:** `students`, `tutor_groups`, and `grades` cannot be altered, dropped, or written to
 
 ## Understanding Errors
 
@@ -174,9 +210,25 @@ SELECT * FROM students WHERE surname = 'Smith'
 **Problem:** Using SQL features not in this MVP
 ```sql
 -- ❌ These don't work yet:
-SELECT COUNT(*) FROM students
-SELECT * FROM students WHERE student_id > 5
-SELECT * FROM students WHERE surname LIKE 'S%'
+SELECT * FROM students WHERE surname LIKE 'S%' OR tutor_group_id = 1  -- OR not supported
+SELECT * FROM students WHERE tutor_group_id IN (1, 2)                 -- IN not supported
+SELECT * FROM students WHERE score BETWEEN 70 AND 90                  -- BETWEEN not supported
+SELECT * FROM students LEFT JOIN tutor_groups ON ...                  -- Outer joins not supported
+SELECT * FROM students s                                              -- Table aliases not supported
+```
+
+### CONSTRAINT VIOLATION
+**Problem:** Column rules or table protections were broken
+```sql
+-- ❌ NOT NULL rejected
+CREATE TABLE people (id INT PRIMARY KEY, name TEXT NOT NULL);
+INSERT INTO people (id, name) VALUES (1, NULL); -- Error: name cannot be NULL
+
+-- ❌ Duplicate primary key
+INSERT INTO people (id, name) VALUES (1, 'Second'); -- Error: duplicate primary key value
+
+-- ❌ Protected table
+INSERT INTO students (student_id, forename) VALUES (999, 'Test'); -- Error: protected table
 ```
 
 ## Tips for Learning

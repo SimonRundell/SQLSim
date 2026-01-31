@@ -16,6 +16,62 @@ export class Executor {
     this.schema = schema;
   }
 
+  resolveColumnDefinitions(tableName) {
+    const tableSchema = this.schema[tableName] || { columns: [] };
+    return (tableSchema.columns || []).map(col => ({
+      name: col.name,
+      type: col.type || 'string',
+      size: col.size ?? null,
+      autoIncrement: Boolean(col.autoIncrement),
+      isPrimaryKey: Boolean(col.isPrimaryKey) || tableSchema.primaryKey === col.name,
+      notNull: Boolean(col.notNull) || Boolean(col.autoIncrement) || tableSchema.primaryKey === col.name,
+    }));
+  }
+
+  getPrimaryKey(tableSchema, columnDefs) {
+    return tableSchema.primaryKey || (columnDefs || []).find(col => col.isPrimaryKey)?.name || null;
+  }
+
+  getLiteralValue(literal) {
+    if (!literal || literal.type !== 'Literal') return null;
+    return literal.value;
+  }
+
+  isTypeCompatible(value, expectedType) {
+    if (value === null || value === undefined) return true;
+    if (!expectedType) return true;
+
+    switch (expectedType) {
+      case 'number':
+        return typeof value === 'number' && Number.isFinite(value);
+      case 'string':
+        return typeof value === 'string';
+      case 'boolean':
+        return typeof value === 'boolean';
+      default:
+        return true;
+    }
+  }
+
+  getNextAutoIncrementValue(tableName, columnName) {
+    const tableData = this.data[tableName] || [];
+    const tableSchema = this.schema[tableName] || {};
+
+    if (!tableSchema.autoIncrementCounters) {
+      tableSchema.autoIncrementCounters = {};
+      this.schema[tableName] = tableSchema;
+    }
+
+    const currentMax = tableData.reduce((max, row) => {
+      const val = Number(row[columnName]);
+      return Number.isFinite(val) && val > max ? val : max;
+    }, 0);
+
+    const nextVal = Math.max(tableSchema.autoIncrementCounters[columnName] || 0, currentMax) + 1;
+    tableSchema.autoIncrementCounters[columnName] = nextVal;
+    return nextVal;
+  }
+
   execute() {
     // Route to appropriate execution method based on statement type
     if (this.ast.type === 'Query') {
@@ -70,9 +126,16 @@ export class Executor {
     }
 
     // Step 6: Apply SELECT projection
-    const { columns, rows } = groupedData 
+    const selection = groupedData 
       ? this.applySelectWithGroupBy(groupedData)
       : this.applySelect(rowset);
+
+    let { columns, rows } = selection;
+
+    // Step 6.5: Apply DISTINCT if requested
+    if (this.ast.select.distinct) {
+      rows = this.applyDistinct(rows);
+    }
 
     // Step 7: Apply ORDER BY
     let orderedRows = rows;
@@ -337,6 +400,21 @@ export class Executor {
     }
   }
 
+  applyDistinct(rows) {
+    const seen = new Set();
+    const unique = [];
+
+    for (const row of rows) {
+      const key = JSON.stringify(row);
+      if (!seen.has(key)) {
+        seen.add(key);
+        unique.push(row);
+      }
+    }
+
+    return unique;
+  }
+
   applyOrderBy(rows, columns, originalRowset) {
     const orderCol = this.ast.orderBy.column;
     const direction = this.ast.orderBy.direction;
@@ -440,22 +518,44 @@ export class Executor {
   }
 
   executeCreateTable() {
-    const { tableName, columns } = this.ast;
+    const { tableName, columns, primaryKey } = this.ast;
     
     // Check if table already exists
     if (this.schema[tableName] || this.data[tableName]) {
       throw new Error(`Table '${tableName}' already exists`);
     }
-    
+
+    const normalizedColumns = columns.map(col => ({
+      name: col.name,
+      type: col.type,
+      size: col.size ?? null,
+      notNull: Boolean(col.notNull) || Boolean(col.isPrimaryKey) || Boolean(col.autoIncrement),
+      autoIncrement: Boolean(col.autoIncrement),
+      isPrimaryKey: Boolean(col.isPrimaryKey),
+    }));
+
+    // Validate unique column names
+    const nameSet = new Set();
+    for (const col of normalizedColumns) {
+      if (nameSet.has(col.name)) {
+        throw new Error(`Duplicate column '${col.name}' in table definition`);
+      }
+      nameSet.add(col.name);
+    }
+
+    const effectivePrimaryKey = primaryKey || normalizedColumns.find(c => c.isPrimaryKey)?.name || null;
+
     // Add to schema
     this.schema[tableName] = {
-      columns: columns,
+      columns: normalizedColumns,
       isUserCreated: true,
+      primaryKey: effectivePrimaryKey,
+      autoIncrementCounters: {},
     };
-    
+
     // Add empty data array
     this.data[tableName] = [];
-    
+
     return {
       columns: ['Result'],
       rows: [[`Table '${tableName}' created successfully with ${columns.length} column(s)`]],
@@ -468,7 +568,7 @@ export class Executor {
   }
 
   executeAlterTable() {
-    const { tableName, columnName, columnType } = this.ast;
+    const { tableName, column } = this.ast;
     
     // Check if table exists
     if (!this.schema[tableName]) {
@@ -482,23 +582,45 @@ export class Executor {
     }
     
     // Check if column already exists
-    if (this.schema[tableName].columns.some(col => col.name === columnName)) {
-      throw new Error(`Column '${columnName}' already exists in table '${tableName}'`);
+    if (this.schema[tableName].columns.some(col => col.name === column.name)) {
+      throw new Error(`Column '${column.name}' already exists in table '${tableName}'`);
     }
-    
+
+    const tableData = this.data[tableName] || [];
+    if (tableData.length > 0 && (column.notNull || column.isPrimaryKey || column.autoIncrement)) {
+      throw new Error('Cannot add NOT NULL, PRIMARY KEY, or AUTO_INCREMENT column to a non-empty table');
+    }
+
+    const normalizedColumn = {
+      name: column.name,
+      type: column.type,
+      size: column.size ?? null,
+      notNull: Boolean(column.notNull) || Boolean(column.isPrimaryKey) || Boolean(column.autoIncrement),
+      autoIncrement: Boolean(column.autoIncrement),
+      isPrimaryKey: Boolean(column.isPrimaryKey),
+    };
+
     // Add column to schema
-    this.schema[tableName].columns.push({ name: columnName, type: columnType });
-    
-    // Add column to existing data rows with null values
-    if (this.data[tableName]) {
-      for (const row of this.data[tableName]) {
-        row[columnName] = null;
+    this.schema[tableName].columns.push(normalizedColumn);
+
+    // Update primary key if provided
+    if (normalizedColumn.isPrimaryKey) {
+      if (this.schema[tableName].primaryKey) {
+        throw new Error(`Table '${tableName}' already has a primary key '${this.schema[tableName].primaryKey}'`);
       }
+      this.schema[tableName].primaryKey = normalizedColumn.name;
     }
-    
+
+    // Add column to existing data rows with null values
+    for (const row of tableData) {
+      row[normalizedColumn.name] = normalizedColumn.autoIncrement
+        ? this.getNextAutoIncrementValue(tableName, normalizedColumn.name)
+        : null;
+    }
+
     return {
       columns: ['Result'],
-      rows: [[`Column '${columnName}' added to table '${tableName}'`]],
+      rows: [[`Column '${normalizedColumn.name}' added to table '${tableName}'`]],
       meta: {
         rowCount: 0,
         warnings: [],
@@ -551,36 +673,86 @@ export class Executor {
     if (protectedTables.includes(tableName)) {
       throw new Error(`Cannot insert into protected table '${tableName}'`);
     }
-    
+
+    const columnDefs = this.resolveColumnDefinitions(tableName);
+    const tableSchema = this.schema[tableName];
+    const primaryKey = this.getPrimaryKey(tableSchema, columnDefs);
+
     // Validate columns exist
-    const tableColumns = this.schema[tableName].columns.map(col => col.name);
+    const tableColumns = columnDefs.map(col => col.name);
     for (const col of columns) {
       if (!tableColumns.includes(col)) {
         throw new Error(`Column '${col}' does not exist in table '${tableName}'`);
       }
     }
-    
+
     // Validate value count matches column count
     if (columns.length !== values.length) {
       throw new Error(`Column count (${columns.length}) does not match value count (${values.length})`);
     }
-    
+
     // Build the new row
     const newRow = {};
     for (let i = 0; i < columns.length; i++) {
-      newRow[columns[i]] = values[i].value;
+      const colName = columns[i];
+      const colDef = columnDefs.find(c => c.name === colName);
+      const literalValue = this.getLiteralValue(values[i]);
+
+      if ((colDef.notNull || colDef.isPrimaryKey) && (literalValue === null || literalValue === undefined)) {
+        throw new Error(`Column '${colName}' cannot be NULL`);
+      }
+
+      if (!this.isTypeCompatible(literalValue, colDef.type)) {
+        throw new Error(`Value for column '${colName}' must be of type ${colDef.type}`);
+      }
+
+      newRow[colName] = literalValue;
     }
-    
-    // Add null for any missing columns
-    for (const col of tableColumns) {
-      if (!(col in newRow)) {
-        newRow[col] = null;
+
+    // Add null or auto-increment values for missing columns
+    for (const colDef of columnDefs) {
+      if (!(colDef.name in newRow)) {
+        if (colDef.autoIncrement) {
+          newRow[colDef.name] = this.getNextAutoIncrementValue(tableName, colDef.name);
+        } else {
+          newRow[colDef.name] = null;
+        }
+      }
+
+      if ((colDef.notNull || colDef.isPrimaryKey) && (newRow[colDef.name] === null || newRow[colDef.name] === undefined)) {
+        throw new Error(`Column '${colDef.name}' cannot be NULL`);
+      }
+
+      if (!this.isTypeCompatible(newRow[colDef.name], colDef.type)) {
+        throw new Error(`Value for column '${colDef.name}' must be of type ${colDef.type}`);
+      }
+
+      if (colDef.autoIncrement) {
+        const numericValue = Number(newRow[colDef.name]);
+        if (Number.isFinite(numericValue)) {
+          const current = tableSchema.autoIncrementCounters?.[colDef.name] || 0;
+          if (!tableSchema.autoIncrementCounters) tableSchema.autoIncrementCounters = {};
+          tableSchema.autoIncrementCounters[colDef.name] = Math.max(current, numericValue);
+        }
       }
     }
-    
+
+    // Enforce primary key
+    if (primaryKey) {
+      const pkValue = newRow[primaryKey];
+      if (pkValue === null || pkValue === undefined) {
+        throw new Error(`Primary key '${primaryKey}' cannot be NULL`);
+      }
+
+      const conflict = (this.data[tableName] || []).some(row => row[primaryKey] === pkValue);
+      if (conflict) {
+        throw new Error(`Duplicate primary key value '${pkValue}' for '${primaryKey}'`);
+      }
+    }
+
     // Insert the row
     this.data[tableName].push(newRow);
-    
+
     return {
       columns: ['Result'],
       rows: [[`1 row inserted into '${tableName}'`]],
@@ -606,8 +778,12 @@ export class Executor {
       throw new Error(`Cannot update protected table '${tableName}'`);
     }
     
+    const columnDefs = this.resolveColumnDefinitions(tableName);
+    const tableSchema = this.schema[tableName];
+    const primaryKey = this.getPrimaryKey(tableSchema, columnDefs);
+
     // Validate columns exist
-    const tableColumns = this.schema[tableName].columns.map(col => col.name);
+    const tableColumns = columnDefs.map(col => col.name);
     for (const assignment of assignments) {
       if (!tableColumns.includes(assignment.column)) {
         throw new Error(`Column '${assignment.column}' does not exist in table '${tableName}'`);
@@ -640,7 +816,34 @@ export class Executor {
     let updateCount = 0;
     for (const row of rowsToUpdate) {
       for (const assignment of assignments) {
-        row[assignment.column] = assignment.value.value;
+        const colDef = columnDefs.find(c => c.name === assignment.column);
+        const newValue = this.getLiteralValue(assignment.value);
+
+        if ((colDef.notNull || colDef.isPrimaryKey) && (newValue === null || newValue === undefined)) {
+          throw new Error(`Column '${assignment.column}' cannot be NULL`);
+        }
+
+        if (!this.isTypeCompatible(newValue, colDef.type)) {
+          throw new Error(`Value for column '${assignment.column}' must be of type ${colDef.type}`);
+        }
+
+        if (primaryKey && assignment.column === primaryKey) {
+          const conflict = this.data[tableName].some(existing => existing !== row && existing[primaryKey] === newValue);
+          if (conflict) {
+            throw new Error(`Duplicate primary key value '${newValue}' for '${primaryKey}'`);
+          }
+        }
+
+        row[assignment.column] = newValue;
+
+        if (colDef.autoIncrement) {
+          const numericValue = Number(newValue);
+          if (Number.isFinite(numericValue)) {
+            const current = tableSchema.autoIncrementCounters?.[colDef.name] || 0;
+            if (!tableSchema.autoIncrementCounters) tableSchema.autoIncrementCounters = {};
+            tableSchema.autoIncrementCounters[colDef.name] = Math.max(current, numericValue);
+          }
+        }
       }
       updateCount++;
     }

@@ -68,6 +68,7 @@ function GuideDrawer({ isOpen, onClose }) {
                 <li>Keywords can be any case: <code>SELECT</code>, <code>select</code></li>
                 <li>Semicolons are optional: <code>SELECT * FROM students;</code></li>
                 <li>Use TRUE/FALSE for boolean values</li>
+                <li>Use DISTINCT when you need unique rows</li>
               </ul>
             </div>
 
@@ -82,7 +83,7 @@ function GuideDrawer({ isOpen, onClose }) {
 
           <section>
             <h3>Query Structure</h3>
-            <pre className="code-block">{`SELECT column1, column2      -- What columns to show
+            <pre className="code-block">{`SELECT [DISTINCT] column1, column2   -- What columns to show
 FROM table_name              -- Which table to query
 INNER JOIN other_table       -- Join another table (optional)
   ON table1.id = table2.id   -- How to join them
@@ -148,18 +149,18 @@ GROUP BY s.student_id, s.forename, s.surname, t.tutor_name`}</pre>
             <div className="example">
               <p><strong>Supported types:</strong></p>
               <ul>
-                <li><code>number</code>, <code>int</code>, <code>integer</code>, <code>float</code>, <code>real</code> → number</li>
-                <li><code>string</code>, <code>varchar</code>, <code>text</code> → string</li>
+                <li><code>INT</code>, <code>DECIMAL</code>, <code>FLOAT</code>, <code>NUMERIC</code> → number</li>
+                <li><code>VARCHAR</code>, <code>CHAR</code>, <code>TEXT</code> → string</li>
+                <li><code>BOOLEAN</code> → true/false</li>
               </ul>
             </div>
 
             <div className="example">
-              <p><strong>Example - Create a contacts table:</strong></p>
-              <pre className="code-block">{`CREATE TABLE contacts (
-  contact_id number,
-  name string,
-  email string,
-  phone string
+              <p><strong>Example - Create a tasks table with constraints:</strong></p>
+              <pre className="code-block">{`CREATE TABLE tasks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  title VARCHAR(100) NOT NULL,
+  done BOOLEAN NOT NULL
 )`}</pre>
             </div>
 
@@ -179,6 +180,36 @@ ALTER TABLE contacts ADD city string`}</pre>
           </section>
 
           <section>
+            <h3>🛡️ Constraints & Nulls</h3>
+            <ul>
+              <li><strong>PRIMARY KEY</strong>: must be unique and not null</li>
+              <li><strong>AUTO_INCREMENT</strong>: auto-generates the next numeric key when you omit the column</li>
+              <li><strong>NOT NULL</strong>: value is required on insert/update</li>
+              <li><strong>NULL</strong>: explicitly allow missing values</li>
+              <li><strong>Protected tables</strong>: students, tutor_groups, grades cannot be altered, dropped, or written to</li>
+            </ul>
+
+            <div className="example">
+              <p><strong>Safe inserts with constraints:</strong></p>
+              <pre className="code-block">{`INSERT INTO tasks (title, done) VALUES ('Write SQL', TRUE);
+INSERT INTO tasks (title, done) VALUES ('Debug', FALSE);
+-- id auto-fills 1, 2, ...`}</pre>
+            </div>
+
+            <div className="example">
+              <p><strong>Constraint errors you might see:</strong></p>
+              <pre className="code-block">{`-- NOT NULL violation
+INSERT INTO tasks (title, done) VALUES (NULL, TRUE);
+
+-- Duplicate primary key
+INSERT INTO tasks (id, title, done) VALUES (1, 'Clash', TRUE);
+
+-- Protected table write
+INSERT INTO students (student_id, forename) VALUES (999, 'Test');`}</pre>
+            </div>
+          </section>
+
+          <section>
             <h3>🆕 Inserting Data</h3>
             <p>Add rows to your custom tables with INSERT INTO:</p>
 
@@ -190,11 +221,11 @@ VALUES (value1, value2, value3)`}</pre>
 
             <div className="example">
               <p><strong>Example:</strong></p>
-              <pre className="code-block">{`INSERT INTO contacts (contact_id, name, email, phone)
-VALUES (1, 'John Smith', 'john@example.com', '555-0101')
+              <pre className="code-block">{`-- Let AUTO_INCREMENT fill the id
+INSERT INTO tasks (title, done) VALUES ('Plan lesson', FALSE);
 
-INSERT INTO contacts (contact_id, name, email)
-VALUES (2, 'Jane Doe', 'jane@example.com')`}</pre>
+-- Provide all values yourself (must be unique and non-null)
+INSERT INTO tasks (id, title, done) VALUES (10, 'Review', TRUE);`}</pre>
             </div>
 
             <p className="warning-box">
@@ -340,9 +371,6 @@ WHERE TRUE AND surname = 'Smith';`}</pre>
 UPDATE my_table SET active = FALSE WHERE id = 1;`}</pre>
             </div>
 
-            <p className="warning-box">
-              💡 <strong>Note:</strong> TRUE evaluates to 1 and FALSE evaluates to 0 internally.
-            </p>
           </section>
 
           <section>

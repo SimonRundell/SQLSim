@@ -5,6 +5,7 @@ A client-side SQL query simulator built with React and Vite for learning SQL SEL
 ## Features
 
 - ✅ **SELECT** queries with column selection or `*`
+- ✅ **DISTINCT** for deduping result rows
 - ✅ **FROM** single table
 - ✅ **INNER JOIN** with ON conditions
 - ✅ **WHERE** clauses with AND-chained equality comparisons
@@ -12,6 +13,9 @@ A client-side SQL query simulator built with React and Vite for learning SQL SEL
 - ✅ **Aggregate Functions**: COUNT(), SUM(), AVG(), MIN(), MAX()
 - ✅ **ORDER BY** with ASC/DESC
 - ✅ **LIMIT** for result set size
+- ✅ **Schema & Data**: CREATE TABLE, ALTER TABLE ADD COLUMN, DROP TABLE, INSERT, UPDATE, DELETE
+- ✅ **Constraints**: PRIMARY KEY, AUTO_INCREMENT, NULL / NOT NULL
+- ✅ **Types**: INT/DECIMAL/FLOAT/NUMERIC → number, VARCHAR/CHAR/TEXT → string, BOOLEAN
 - ✅ Real-time error feedback with helpful messages
 - ✅ Interactive UI with source tables, query editor, and results panel
 
@@ -27,13 +31,30 @@ A client-side SQL query simulator built with React and Vite for learning SQL SEL
 ### Supported SQL Features
 
 ```sql
-SELECT <columns or * or COUNT(*)>
+SELECT [DISTINCT] <columns or * or COUNT(*)>
 FROM <table>
 [INNER JOIN <table> ON <column> = <column>]
 [WHERE <condition> AND <condition> ...]
 [GROUP BY <column> [, <column> ...]]
 [ORDER BY <column> [ASC|DESC]]
 [LIMIT <number>]
+```
+
+### DDL and DML
+
+```sql
+CREATE TABLE <name> (
+  column_name column_type [PRIMARY KEY] [AUTO_INCREMENT] [NULL|NOT NULL],
+  ...
+)
+
+ALTER TABLE <name> ADD [COLUMN] column_name column_type [PRIMARY KEY] [AUTO_INCREMENT] [NULL|NOT NULL]
+
+DROP TABLE <name>
+
+INSERT INTO <table> (col1, col2, ...) VALUES (val1, val2, ...)
+UPDATE <table> SET col1 = val1 [, col2 = val2 ...] [WHERE condition]
+DELETE FROM <table> [WHERE condition]
 ```
 
 ### Aggregate Functions
@@ -55,12 +76,11 @@ Note: All aggregate functions except COUNT(*) require a column name and work onl
 
 ### Sample Tables
 
-The simulator includes four teaching tables:
+The simulator includes three teaching tables:
 
 1. **students** (student_id, forename, surname, tutor_group_id)
 2. **tutor_groups** (tutor_group_id, tutor_name, room)
-3. **attendance** (student_id, session_date, present)
-4. **grades** (student_id, module, paper, score)
+3. **grades** (student_id, module, paper, score)
 
 ## Example Queries
 
@@ -232,27 +252,30 @@ src/
 - LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN
 - Multiple JOINs
 - OR, NOT, parentheses in WHERE
-- LIKE, IN, BETWEEN operators
-- Additional aggregates (SUM, AVG, MIN, MAX)
 - HAVING clause
-- DISTINCT
-- Table and column aliases
+- IN, BETWEEN operators
+- Table aliases
 - CREATE TEMP TABLE
 - Subqueries
 - Visual query explanation/execution plan
 
 ## Testing
 
-Try these test cases to verify functionality:
+Automated suite (Node):
 
-1. ✅ `SELECT * FROM students`
-2. ✅ `SELECT surname FROM students WHERE surname = 'Smith'`
-3. ✅ JOIN query (see example #3 above)
-4. ✅ Ambiguous column: `SELECT tutor_group_id FROM students INNER JOIN tutor_groups ON students.tutor_group_id = tutor_groups.tutor_group_id` (should error)
-5. ✅ Unknown column: `SELECT foo FROM students` (should error)
-6. ✅ COUNT aggregate: `SELECT COUNT(*) FROM students` (should work)
-7. ✅ GROUP BY: `SELECT tutor_group_id, COUNT(*) FROM students GROUP BY tutor_group_id` (should work)
-8. ✅ GROUP BY validation: `SELECT forename, COUNT(*) FROM students GROUP BY tutor_group_id` (should error - forename not in GROUP BY)
+```bash
+npm test
+```
+
+Key automated checks include DISTINCT, BOOLEAN/NULL handling, NOT NULL and PRIMARY KEY enforcement, AUTO_INCREMENT progression, and type validation.
+
+Quick manual smoke tests:
+
+1. ✅ `SELECT DISTINCT tutor_group_id FROM students` (should return 3 rows)
+2. ✅ `SELECT * FROM students WHERE FALSE` (should return 0 rows)
+3. ✅ `CREATE TABLE t (id INT PRIMARY KEY AUTO_INCREMENT, ok BOOLEAN NOT NULL); INSERT INTO t (ok) VALUES (TRUE); SELECT * FROM t;` (id should start at 1, ok true)
+4. ✅ `INSERT INTO students (...)` (should fail – protected table)
+5. ✅ `SELECT COUNT(*) FROM students` (should return 10)
 
 ## License
 

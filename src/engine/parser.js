@@ -51,7 +51,14 @@ export class Parser {
   parseQuery() {
     // query := SELECT select_list FROM table_ref [join_clause] [where_clause] [group_by_clause] [order_clause] [limit_clause]
     this.expectKeyword('SELECT');
+    let isDistinct = false;
+    if (this.checkKeyword('DISTINCT')) {
+      this.advance();
+      isDistinct = true;
+    }
+
     const select = this.parseSelectList();
+    select.distinct = isDistinct;
 
     this.expectKeyword('FROM');
     const from = this.parseTableRef();
@@ -246,6 +253,7 @@ export class Parser {
     
     // Check if this is a standalone boolean (TRUE or FALSE without operator)
     if (left.type === 'Literal' && left.valueType === 'boolean') {
+      const boolNumber = left.value ? 1 : 0;
       // Check if next token is AND, EOF, or other clause keyword
       if (this.checkKeyword('AND') || this.check(TokenType.EOF) || 
           this.checkKeyword('ORDER') || this.checkKeyword('GROUP') || 
@@ -254,7 +262,7 @@ export class Parser {
         return {
           left: { type: 'Literal', value: 1, valueType: 'number', position: left.position },
           operator: '=',
-          right: { type: 'Literal', value: left.value, valueType: 'number', position: left.position }
+          right: { type: 'Literal', value: boolNumber, valueType: 'number', position: left.position }
         };
       }
     }
@@ -297,12 +305,14 @@ export class Parser {
 
   parseOperand() {
     // operand := column_ref | literal | boolean
-    if (this.check(TokenType.NUMBER) || this.check(TokenType.STRING)) {
+    if (
+      this.check(TokenType.NUMBER) ||
+      this.check(TokenType.STRING) ||
+      this.checkKeyword('TRUE') ||
+      this.checkKeyword('FALSE') ||
+      this.checkKeyword('NULL')
+    ) {
       return this.parseLiteral();
-    }
-    // Check for TRUE or FALSE keywords
-    if (this.checkKeyword('TRUE') || this.checkKeyword('FALSE')) {
-      return this.parseBooleanLiteral();
     }
     return this.parseColumnRef();
   }
@@ -314,7 +324,7 @@ export class Parser {
     
     return {
       type: 'Literal',
-      value: value ? 1 : 0,  // Convert to 1 or 0 for comparison
+      value,
       valueType: 'boolean',
       position: token.start,
     };
@@ -347,7 +357,7 @@ export class Parser {
   parseLiteral() {
     // literal := NUMBER | STRING
     const token = this.current();
-    
+
     if (token.type === TokenType.NUMBER) {
       this.advance();
       return {
@@ -365,6 +375,20 @@ export class Parser {
         value: token.value,
         valueType: 'string',
         position: token.start,
+      };
+    }
+
+    if (this.checkKeyword('TRUE') || this.checkKeyword('FALSE')) {
+      return this.parseBooleanLiteral();
+    }
+
+    if (this.checkKeyword('NULL')) {
+      const nullToken = this.advance();
+      return {
+        type: 'Literal',
+        value: null,
+        valueType: 'null',
+        position: nullToken.start,
       };
     }
 
@@ -445,30 +469,20 @@ export class Parser {
     this.expect(TokenType.LPAREN);
     
     const columns = [];
+    let primaryKey = null;
     do {
       if (this.check(TokenType.RPAREN)) break;
-      
-      const columnName = this.expect(TokenType.IDENT).value;
-      const columnType = this.expect(TokenType.IDENT).value.toLowerCase();
-      
-      // Validate type
-      if (!['number', 'string', 'int', 'integer', 'varchar', 'text', 'float', 'real'].includes(columnType)) {
-        throw createSyntaxError(
-          `Unknown column type: ${columnType}. Use number, string, int, integer, varchar, text, float, or real`,
-          this.current().start
-        );
+
+      const columnDef = this.parseColumnDefinition();
+      if (columnDef.isPrimaryKey) {
+        if (primaryKey && primaryKey !== columnDef.name) {
+          throw createSyntaxError('Multiple primary keys are not supported', columnDef.position);
+        }
+        primaryKey = columnDef.name;
       }
-      
-      // Normalize types to our internal types
-      let normalizedType = columnType;
-      if (['int', 'integer', 'float', 'real'].includes(columnType)) {
-        normalizedType = 'number';
-      } else if (['varchar', 'text'].includes(columnType)) {
-        normalizedType = 'string';
-      }
-      
-      columns.push({ name: columnName, type: normalizedType });
-      
+
+      columns.push(columnDef);
+
       if (this.check(TokenType.COMMA)) {
         this.advance();
       } else {
@@ -482,7 +496,107 @@ export class Parser {
       type: 'CreateTable',
       tableName,
       columns,
+      primaryKey,
     };
+  }
+
+  parseColumnDefinition() {
+    const nameToken = this.expect(TokenType.IDENT);
+    const { type, size } = this.parseColumnType();
+
+    let isPrimaryKey = false;
+    let autoIncrement = false;
+    let notNull = false;
+    let nullableSpecified = false;
+
+    while (true) {
+      if (this.checkKeyword('PRIMARY')) {
+        this.advance();
+        this.expectKeyword('KEY');
+        isPrimaryKey = true;
+        continue;
+      }
+
+      if (this.checkKeyword('AUTO_INCREMENT')) {
+        this.advance();
+        autoIncrement = true;
+        continue;
+      }
+
+      if (this.checkKeyword('NOT')) {
+        this.advance();
+        this.expectKeyword('NULL');
+        notNull = true;
+        nullableSpecified = true;
+        continue;
+      }
+
+      if (this.checkKeyword('NULL')) {
+        this.advance();
+        notNull = false;
+        nullableSpecified = true;
+        continue;
+      }
+
+      break;
+    }
+
+    if (isPrimaryKey || autoIncrement) {
+      notNull = true;
+    }
+
+    return {
+      name: nameToken.value,
+      type,
+      size,
+      isPrimaryKey,
+      autoIncrement,
+      notNull,
+      nullableSpecified,
+      position: nameToken.start,
+    };
+  }
+
+  parseColumnType() {
+    const token = this.current();
+    if (token.type !== TokenType.IDENT && token.type !== TokenType.KEYWORD) {
+      throw createSyntaxError(
+        `Expected column type, got ${token.type}`,
+        token.start
+      );
+    }
+
+    const rawType = token.value.toLowerCase();
+    this.advance();
+
+    let size = null;
+    if (this.check(TokenType.LPAREN)) {
+      this.advance();
+      const sizeToken = this.expect(TokenType.NUMBER);
+      size = Number(sizeToken.value);
+      this.expect(TokenType.RPAREN);
+    }
+
+    const type = this.normalizeColumnType(rawType, token.start);
+
+    return { type, size };
+  }
+
+  normalizeColumnType(rawType, position) {
+    const type = rawType.toLowerCase();
+
+    const numberTypes = ['number', 'int', 'integer', 'decimal', 'float', 'numeric', 'real', 'double'];
+    const stringTypes = ['string', 'varchar', 'char', 'text'];
+    const booleanTypes = ['boolean', 'bool'];
+
+    if (numberTypes.includes(type)) return 'number';
+    if (stringTypes.includes(type)) return 'string';
+    if (booleanTypes.includes(type)) return 'boolean';
+
+    throw createSyntaxError(
+      `Unknown column type: ${rawType}. Use INT, DECIMAL, FLOAT, NUMERIC, VARCHAR, CHAR, TEXT, BOOLEAN, or compatible synonyms`,
+      position
+    );
   }
 
   parseAlterTable() {
@@ -501,29 +615,62 @@ export class Parser {
     }
     
     const columnName = this.expect(TokenType.IDENT).value;
-    const columnType = this.expect(TokenType.IDENT).value.toLowerCase();
-    
-    // Validate and normalize type
-    if (!['number', 'string', 'int', 'integer', 'varchar', 'text', 'float', 'real'].includes(columnType)) {
-      throw createSyntaxError(
-        `Unknown column type: ${columnType}. Use number, string, int, integer, varchar, text, float, or real`,
-        this.current().start
-      );
+    const columnDetails = this.parseColumnType();
+
+    let isPrimaryKey = false;
+    let autoIncrement = false;
+    let notNull = false;
+    let nullableSpecified = false;
+
+    while (true) {
+      if (this.checkKeyword('PRIMARY')) {
+        this.advance();
+        this.expectKeyword('KEY');
+        isPrimaryKey = true;
+        continue;
+      }
+
+      if (this.checkKeyword('AUTO_INCREMENT')) {
+        this.advance();
+        autoIncrement = true;
+        continue;
+      }
+
+      if (this.checkKeyword('NOT')) {
+        this.advance();
+        this.expectKeyword('NULL');
+        notNull = true;
+        nullableSpecified = true;
+        continue;
+      }
+
+      if (this.checkKeyword('NULL')) {
+        this.advance();
+        notNull = false;
+        nullableSpecified = true;
+        continue;
+      }
+
+      break;
     }
-    
-    let normalizedType = columnType;
-    if (['int', 'integer', 'float', 'real'].includes(columnType)) {
-      normalizedType = 'number';
-    } else if (['varchar', 'text'].includes(columnType)) {
-      normalizedType = 'string';
+
+    if (isPrimaryKey || autoIncrement) {
+      notNull = true;
     }
-    
+
     return {
       type: 'AlterTable',
       tableName,
       action: 'ADD_COLUMN',
-      columnName,
-      columnType: normalizedType,
+      column: {
+        name: columnName,
+        type: columnDetails.type,
+        size: columnDetails.size,
+        isPrimaryKey,
+        autoIncrement,
+        notNull,
+        nullableSpecified,
+      },
     };
   }
 
@@ -676,7 +823,7 @@ export class Parser {
     const token = this.current();
     
     // Check for unsupported features
-    const unsupportedKeywords = ['HAVING', 'DISTINCT', 'OR', 'NOT', 'IN', 'BETWEEN', 'LEFT', 'RIGHT', 'OUTER', 'FULL'];
+    const unsupportedKeywords = ['HAVING', 'OR', 'IN', 'BETWEEN', 'LEFT', 'RIGHT', 'OUTER', 'FULL'];
     if (token.type === TokenType.KEYWORD && unsupportedKeywords.includes(token.value.toUpperCase())) {
       throw createUnsupportedFeatureError(token.value.toUpperCase(), token.start);
     }

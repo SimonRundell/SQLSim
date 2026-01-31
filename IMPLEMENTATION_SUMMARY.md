@@ -1,5 +1,34 @@
 # SQLSim - Implementation Summary
 
+## Changes Implemented - January 31, 2026
+
+### ✅ DISTINCT, NULL / NOT NULL, PRIMARY KEY, AUTO_INCREMENT, BOOLEAN
+**Files Modified:**
+- `src/engine/tokenizer.js` - Tokenize NULL, PRIMARY, KEY, AUTO_INCREMENT keywords
+- `src/engine/parser.js` - Parse DISTINCT, BOOLEAN/NULL literals, and column constraints (PRIMARY KEY, AUTO_INCREMENT, NULL/NOT NULL) with normalized types (INT/DECIMAL/FLOAT/NUMERIC → number, VARCHAR/CHAR/TEXT → string, BOOLEAN)
+- `src/engine/executor.js` - Enforce constraints, generate AUTO_INCREMENT values, validate types, apply DISTINCT, and enforce primary key uniqueness
+- `src/tests.js`, `scripts/run-tests.mjs` - Automated coverage for DISTINCT, constraints, booleans, NULL handling, and type validation
+
+**Features:**
+- DISTINCT available on SELECT results
+- BOOLEAN literals and BOOLEAN column type supported
+- NULL / NOT NULL enforcement with constraint errors
+- PRIMARY KEY uniqueness and AUTO_INCREMENT counters
+- Type synonyms for numbers and strings (INT/DECIMAL/FLOAT/NUMERIC, VARCHAR/CHAR/TEXT)
+
+**Examples:**
+```sql
+SELECT DISTINCT tutor_group_id FROM students;
+CREATE TABLE tasks (
+   id INT AUTO_INCREMENT PRIMARY KEY,
+   name VARCHAR(100) NOT NULL,
+   done BOOLEAN NOT NULL
+);
+INSERT INTO tasks (name, done) VALUES ('Example', TRUE);
+```
+
+---
+
 ## Changes Implemented - January 29, 2026
 
 ### Recent Updates (Latest)

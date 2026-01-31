@@ -30,11 +30,13 @@ const KEYWORDS = new Set([
   'SELECT', 'FROM', 'WHERE', 'INNER', 'JOIN', 'ON',
   'ORDER', 'BY', 'ASC', 'DESC', 'LIMIT', 'AND',
   'GROUP', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'LIKE', 'AS',
-  // Boolean literals
-  'TRUE', 'FALSE',
+  // Boolean and null literals
+  'TRUE', 'FALSE', 'NULL',
   // DDL and DML keywords
   'CREATE', 'ALTER', 'DROP', 'TABLE', 'ADD', 'COLUMN',
   'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE',
+  // Constraint keywords
+  'PRIMARY', 'KEY', 'AUTO_INCREMENT',
   // Unsupported keywords for error detection
   'HAVING', 'DISTINCT',
   'OR', 'NOT', 'IN', 'BETWEEN', 'LEFT', 'RIGHT', 'OUTER', 'FULL',
