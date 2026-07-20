@@ -96,6 +96,32 @@ LIMIT 10                     -- Limit rows (optional)`}</pre>
           </section>
 
           <section>
+            <h3>🆕 Table Aliases</h3>
+            <p>Give a table a short nickname so you don't have to keep typing its full name (handy in joins).</p>
+
+            <div className="example">
+              <p><strong>With AS keyword:</strong></p>
+              <pre className="code-block">{`SELECT s.forename, s.surname, t.tutor_name
+FROM students AS s
+INNER JOIN tutor_groups AS t ON s.tutor_group_id = t.tutor_group_id
+WHERE t.room = 'B12'`}</pre>
+            </div>
+
+            <div className="example">
+              <p><strong>Without AS (also works):</strong></p>
+              <pre className="code-block">{`SELECT s.forename, s.surname, t.tutor_name
+FROM students s
+INNER JOIN tutor_groups t ON s.tutor_group_id = t.tutor_group_id
+WHERE t.room = 'B12'`}</pre>
+            </div>
+
+            <p className="warning-box">
+              ⚠️ <strong>Note:</strong> Once you alias a table, use the alias everywhere in that
+              query (SELECT, WHERE, ORDER BY) - the original table name no longer works as a qualifier.
+            </p>
+          </section>
+
+          <section>
             <h3>🆕 Column Aliases (AS)</h3>
             <p>Make your results more readable by giving columns custom names!</p>
             

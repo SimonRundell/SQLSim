@@ -162,15 +162,17 @@ export class Executor {
 
   buildFromRowset() {
     const tableName = this.ast.from.name;
+    const key = this.ast.from.alias || tableName;
     const tableData = this.data[tableName] || [];
-    
+
     return tableData.map(row => ({
-      [tableName]: { ...row },
+      [key]: { ...row },
     }));
   }
 
   applyJoin(leftRowset) {
     const rightTableName = this.ast.join.table;
+    const rightKey = this.ast.join.alias || rightTableName;
     const rightTableData = this.data[rightTableName] || [];
     const joinCondition = this.ast.join.on;
 
@@ -178,10 +180,10 @@ export class Executor {
 
     for (const leftRow of leftRowset) {
       for (const rightRow of rightTableData) {
-        // Create merged combined row
+        // Create merged combined row, namespaced by alias (or table name)
         const combinedRow = {
           ...leftRow,
-          [rightTableName]: { ...rightRow },
+          [rightKey]: { ...rightRow },
         };
 
         // Evaluate join condition

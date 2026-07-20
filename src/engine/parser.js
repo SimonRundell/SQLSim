@@ -194,15 +194,16 @@ export class Parser {
   }
 
   parseTableRef() {
-    // table_ref := IDENT
+    // table_ref := IDENT [ [AS] IDENT ]
     const token = this.expect(TokenType.IDENT);
-    return { type: 'Table', name: token.value };
+    const alias = this.parseOptionalAlias();
+    return { type: 'Table', name: token.value, alias };
   }
 
   parseJoinClause() {
-    // join_clause := [INNER] JOIN IDENT ON column_ref "=" column_ref
+    // join_clause := [INNER] JOIN IDENT [ [AS] IDENT ] ON column_ref "=" column_ref
     let joinType = 'INNER';
-    
+
     if (this.checkKeyword('INNER')) {
       this.advance();
       joinType = 'INNER';
@@ -210,6 +211,7 @@ export class Parser {
 
     this.expectKeyword('JOIN');
     const table = this.expect(TokenType.IDENT).value;
+    const alias = this.parseOptionalAlias();
 
     this.expectKeyword('ON');
     const left = this.parseColumnRef();
@@ -220,8 +222,22 @@ export class Parser {
       type: 'Join',
       joinType,
       table,
+      alias,
       on: { left, right },
     };
+  }
+
+  parseOptionalAlias() {
+    // [AS] IDENT - used for table aliases in FROM/JOIN
+    if (this.checkKeyword('AS')) {
+      this.advance();
+      return this.expect(TokenType.IDENT).value;
+    }
+    if (this.check(TokenType.IDENT)) {
+      // Support alias without AS keyword (e.g., FROM students s)
+      return this.expect(TokenType.IDENT).value;
+    }
+    return null;
   }
 
   parseWhereClause() {

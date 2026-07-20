@@ -135,6 +135,48 @@ export const testCases = [
     shouldPass: false,
     expectedErrorSubstring: 'type number',
   },
+  {
+    name: 'Table alias with AS keyword works in JOIN, WHERE, ORDER BY',
+    queries: [
+      `SELECT s.forename, s.surname, t.tutor_name
+       FROM students AS s
+       INNER JOIN tutor_groups AS t ON s.tutor_group_id = t.tutor_group_id
+       WHERE t.room = 'B12'
+       ORDER BY s.surname ASC`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const expected = ['s.forename', 's.surname', 't.tutor_name'];
+      if (JSON.stringify(result.columns) !== JSON.stringify(expected)) {
+        throw new Error(`Expected columns ${JSON.stringify(expected)}, got ${JSON.stringify(result.columns)}`);
+      }
+    },
+  },
+  {
+    name: 'Table alias without AS keyword works the same as with AS',
+    queries: [
+      `SELECT s.forename, s.surname, t.tutor_name
+       FROM students s
+       INNER JOIN tutor_groups t ON s.tutor_group_id = t.tutor_group_id
+       WHERE t.room = 'B12'
+       ORDER BY s.surname ASC`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const rows = selectResultRows(result);
+      if (rows.length === 0) {
+        throw new Error('Expected at least one row');
+      }
+    },
+  },
+  {
+    name: 'Duplicate table alias is rejected',
+    queries: [
+      'SELECT * FROM students s INNER JOIN tutor_groups s ON s.tutor_group_id = s.tutor_group_id',
+    ],
+    shouldPass: false,
+    expectedErrorSubstring: "Duplicate table alias or name 's'",
+  },
 ];
 
 export function runTests({ silent = false } = {}) {

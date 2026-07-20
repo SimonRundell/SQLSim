@@ -14,6 +14,11 @@ export class Validator {
   constructor(ast, schema) {
     this.ast = ast;
     this.schema = schema;
+    // Each entry is { name: actualTableName, alias, key: alias||name }
+    // `key` is the qualifier used to reference the table elsewhere in the
+    // query (e.g. in table.column, or as the row's namespace at execution
+    // time) - it's the alias when one is given, otherwise the table name.
+    this.tableEntries = [];
     this.tablesInScope = [];
   }
 
@@ -33,19 +38,36 @@ export class Validator {
     return tableSchema.columns.map(col => col.name);
   }
 
+  addTableToScope(name, alias, position = null) {
+    const key = alias || name;
+    if (this.tablesInScope.includes(key)) {
+      throw createSyntaxError(
+        `Duplicate table alias or name '${key}' in query`,
+        position
+      );
+    }
+    this.tableEntries.push({ name, alias, key });
+    this.tablesInScope.push(key);
+  }
+
+  resolveTableName(key) {
+    const entry = this.tableEntries.find(e => e.key === key);
+    return entry ? entry.name : null;
+  }
+
   validate() {
     // Validate FROM table
     if (!this.hasTable(this.ast.from.name)) {
       throw createUnknownTableError(this.ast.from.name);
     }
-    this.tablesInScope.push(this.ast.from.name);
+    this.addTableToScope(this.ast.from.name, this.ast.from.alias);
 
     // Validate JOIN table if present
     if (this.ast.join) {
       if (!this.hasTable(this.ast.join.table)) {
         throw createUnknownTableError(this.ast.join.table);
       }
-      this.tablesInScope.push(this.ast.join.table);
+      this.addTableToScope(this.ast.join.table, this.ast.join.alias);
 
       // Validate JOIN ON columns
       this.validateColumnRef(this.ast.join.on.left);
@@ -91,11 +113,13 @@ export class Validator {
 
   validateColumnRef(columnRef) {
     if (columnRef.table) {
-      // Qualified column reference: table.column
+      // Qualified column reference: qualifier.column, where qualifier is
+      // either a table alias or the bare table name
       if (!this.tablesInScope.includes(columnRef.table)) {
         throw createUnknownTableError(columnRef.table, columnRef.position);
       }
-      if (!this.hasColumn(columnRef.table, columnRef.column)) {
+      const actualTable = this.resolveTableName(columnRef.table);
+      if (!this.hasColumn(actualTable, columnRef.column)) {
         throw createUnknownColumnError(
           columnRef.column,
           columnRef.table,
@@ -104,24 +128,24 @@ export class Validator {
       }
     } else {
       // Unqualified column reference: must exist in exactly one table
-      const matchingTables = this.tablesInScope.filter(table =>
-        this.hasColumn(table, columnRef.column)
-      );
+      const matchingKeys = this.tableEntries
+        .filter(entry => this.hasColumn(entry.name, columnRef.column))
+        .map(entry => entry.key);
 
-      if (matchingTables.length === 0) {
+      if (matchingKeys.length === 0) {
         throw createUnknownColumnError(columnRef.column, null, columnRef.position);
       }
 
-      if (matchingTables.length > 1) {
+      if (matchingKeys.length > 1) {
         throw createAmbiguousColumnError(
           columnRef.column,
-          matchingTables,
+          matchingKeys,
           columnRef.position
         );
       }
 
-      // Store the resolved table for later use
-      columnRef.resolvedTable = matchingTables[0];
+      // Store the resolved qualifier (alias or table name) for later use
+      columnRef.resolvedTable = matchingKeys[0];
     }
   }
 
@@ -168,14 +192,14 @@ export class Validator {
    */
   getStarColumns() {
     const columns = [];
-    
-    for (const tableName of this.tablesInScope) {
-      const tableColumns = this.getTableColumns(tableName);
+
+    for (const entry of this.tableEntries) {
+      const tableColumns = this.getTableColumns(entry.name);
       for (const col of tableColumns) {
         columns.push({
-          table: tableName,
+          table: entry.key,
           column: col,
-          displayName: this.tablesInScope.length > 1 ? `${tableName}.${col}` : col,
+          displayName: this.tableEntries.length > 1 ? `${entry.key}.${col}` : col,
         });
       }
     }
