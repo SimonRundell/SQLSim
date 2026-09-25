@@ -697,6 +697,68 @@ export const testCases = [
     shouldPass: false,
     expectedErrorSubstring: 'must appear in GROUP BY clause or be used in an aggregate function',
   },
+  {
+    name: 'Single-line -- comments are ignored, to end of line only',
+    queries: [
+      `-- This whole line is a comment
+       SELECT forename, surname -- trailing comment on the SELECT line
+       FROM students -- another one here
+       WHERE surname = 'Smith' -- and one more
+       ORDER BY forename ASC`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const expected = sampleData.students.filter(s => s.surname === 'Smith').length;
+      if (result.meta.rowCount !== expected) {
+        throw new Error(`Expected ${expected} rows, got ${result.meta.rowCount}`);
+      }
+    },
+  },
+  {
+    name: 'Block /* */ comments are ignored, including multi-line ones',
+    queries: [
+      `SELECT forename, surname /* inline block comment */ FROM students
+       /*
+         A block comment
+         spanning several lines
+       */
+       WHERE surname = 'Smith'`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const expected = sampleData.students.filter(s => s.surname === 'Smith').length;
+      if (result.meta.rowCount !== expected) {
+        throw new Error(`Expected ${expected} rows, got ${result.meta.rowCount}`);
+      }
+    },
+  },
+  {
+    name: 'A comment can sit directly against a token with no whitespace',
+    queries: [`SELECT/*no space*/* FROM students--no space either`],
+    shouldPass: true,
+    assert: result => {
+      if (result.meta.rowCount !== sampleData.students.length) {
+        throw new Error(`Expected ${sampleData.students.length} rows, got ${result.meta.rowCount}`);
+      }
+    },
+  },
+  {
+    name: 'A -- sequence inside a block comment does not end it early',
+    queries: [`SELECT * FROM students /* -- still a comment */ WHERE surname = 'Smith'`],
+    shouldPass: true,
+    assert: result => {
+      const expected = sampleData.students.filter(s => s.surname === 'Smith').length;
+      if (result.meta.rowCount !== expected) {
+        throw new Error(`Expected ${expected} rows, got ${result.meta.rowCount}`);
+      }
+    },
+  },
+  {
+    name: 'An unterminated block comment is a syntax error',
+    queries: ['SELECT * FROM students /* never closed'],
+    shouldPass: false,
+    expectedErrorSubstring: 'Unterminated block comment',
+  },
 ];
 
 export function runTests({ silent = false } = {}) {

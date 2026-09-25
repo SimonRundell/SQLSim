@@ -88,6 +88,18 @@ Usually you don't want every column, just the ones you care about:
 SELECT forename, surname FROM students
 ```
 
+You can add comments to a query - they're ignored when it runs, so use them to leave notes
+for yourself or explain what a query does. `--` comments out everything to the end of that
+line; `/* ... */` comments out everything between the two markers, even across several lines:
+
+```sql
+-- Find students in tutor group 1
+SELECT forename, surname
+FROM students
+WHERE tutor_group_id = 1 /* this comment can span
+multiple lines */
+```
+
 **Try it:** select just `tutor_name` and `room` from `tutor_groups`.
 
 ## 4. Filtering Rows with WHERE

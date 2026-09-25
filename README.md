@@ -28,6 +28,15 @@ A client-side SQL query simulator built with React and Vite for learning SQL SEL
 - **Identifiers**: Bare words (no quotes): `students`, `surname`
 - **Keywords**: Case-insensitive (SELECT, select, Select all work)
 - **Column References**: Can be qualified (`students.surname`) or unqualified (`surname`)
+- **Comments**: `-- like this, to end of line` or `/* like this, over one or more lines */`
+
+```sql
+-- Find students in tutor group 1
+SELECT forename, surname
+FROM students
+WHERE tutor_group_id = 1 /* this comment can span
+multiple lines */
+```
 
 ### Supported SQL Features
 

@@ -62,7 +62,7 @@ export class Tokenizer {
 
   tokenize() {
     while (this.pos < this.input.length) {
-      this.skipWhitespace();
+      this.skipWhitespaceAndComments();
       if (this.pos >= this.input.length) break;
 
       const char = this.input[this.pos];
@@ -140,9 +140,48 @@ export class Tokenizer {
     return this.tokens;
   }
 
-  skipWhitespace() {
-    while (this.pos < this.input.length && /\s/.test(this.input[this.pos])) {
-      this.pos++;
+  /**
+   * Skips whitespace and comments - both single-line ("--" to end of line)
+   * and block-style (slash-star to star-slash, not nested). Runs in a loop
+   * since comments and whitespace can be interspersed, and re-checks after
+   * each comment in case another one immediately follows.
+   */
+  skipWhitespaceAndComments() {
+    while (this.pos < this.input.length) {
+      const char = this.input[this.pos];
+
+      if (/\s/.test(char)) {
+        this.pos++;
+        continue;
+      }
+
+      if (char === '-' && this.input[this.pos + 1] === '-') {
+        this.pos += 2;
+        while (this.pos < this.input.length && this.input[this.pos] !== '\n') {
+          this.pos++;
+        }
+        continue;
+      }
+
+      if (char === '/' && this.input[this.pos + 1] === '*') {
+        const start = this.pos;
+        this.pos += 2;
+        let closed = false;
+        while (this.pos < this.input.length) {
+          if (this.input[this.pos] === '*' && this.input[this.pos + 1] === '/') {
+            this.pos += 2;
+            closed = true;
+            break;
+          }
+          this.pos++;
+        }
+        if (!closed) {
+          throw createSyntaxError('Unterminated block comment - missing closing */', start);
+        }
+        continue;
+      }
+
+      break;
     }
   }
 

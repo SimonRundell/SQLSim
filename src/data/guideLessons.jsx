@@ -89,6 +89,17 @@ export const guideLessons = [
         <p>Usually you only want specific columns, so name them instead of using <code>*</code>:</p>
         <pre className="code-block">SELECT forename, surname FROM students</pre>
         <p>Strings always use <strong>single</strong> quotes. Column and table names are bare words - no quotes at all.</p>
+        <p>
+          You can add comments to a query - they're ignored when it runs, so use them to leave
+          notes for yourself. <code>--</code> comments out everything to the end of that line;{' '}
+          <code>/* ... */</code> comments out everything between the two markers, even across
+          several lines:
+        </p>
+        <pre className="code-block">{`-- Find students in tutor group 1
+SELECT forename, surname
+FROM students
+WHERE tutor_group_id = 1 /* this comment can span
+multiple lines */`}</pre>
       </>
     ),
     challenge: {
