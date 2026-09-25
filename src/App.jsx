@@ -63,7 +63,7 @@ function App() {
     setQuery(DEFAULT_QUERY);
     setResult(null);
     setError(null);
-    
+
     // Reset schema and data to original state
     setCurrentSchema({ ...schema });
     const dataCopy = {};
@@ -71,6 +71,19 @@ function App() {
       dataCopy[table] = sampleData[table].map(row => ({ ...row }));
     }
     setCurrentData(dataCopy);
+  };
+
+  const handleClear = () => {
+    setQuery('');
+    setResult(null);
+    setError(null);
+  };
+
+  const handleLoadQuery = (queryText) => {
+    setQuery(queryText);
+    setResult(null);
+    setError(null);
+    setIsGuideOpen(false);
   };
 
   return (
@@ -95,6 +108,7 @@ function App() {
               query={query}
               onQueryChange={setQuery}
               onRun={handleRun}
+              onClear={handleClear}
               onReset={handleReset}
             />
           </div>
@@ -115,9 +129,10 @@ function App() {
       </button>
 
       {/* Guide Drawer */}
-      <GuideDrawer 
-        isOpen={isGuideOpen} 
-        onClose={() => setIsGuideOpen(false)} 
+      <GuideDrawer
+        isOpen={isGuideOpen}
+        onClose={() => setIsGuideOpen(false)}
+        onLoadQuery={handleLoadQuery}
       />
 
       {isModalOpen && (
@@ -133,7 +148,7 @@ function App() {
             <div className="modal-body">
               <h3>Author</h3>
               <p><strong>Simon Rundell</strong></p>
-              <p>Programme Leader, Dept of ITDD<br/>Exeter College</p>
+              <p>Programme Leader, Faculty of Cybersecurity and Digital Technologies<br/>Exeter College</p>
               
               <h3>About This Tool</h3>
               <p>SQLSim is an interactive teaching aid designed to help students learn SQL through hands-on practice with realistic data scenarios.</p>
