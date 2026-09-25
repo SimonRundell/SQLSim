@@ -842,6 +842,195 @@ export const testCases = [
     shouldPass: false,
     expectedErrorSubstring: 'Unknown table: not_a_table',
   },
+  {
+    // Fixture for outer-join tests: dept 'HR' has no employees, and
+    // employee Carol has a dept_id that matches no department.
+    name: 'LEFT JOIN keeps every left row, null-filling an unmatched right side',
+    queries: [
+      'CREATE TABLE dept (id INT PRIMARY KEY, dept_name VARCHAR(50))',
+      'CREATE TABLE emp (id INT PRIMARY KEY, emp_name VARCHAR(50), dept_id INT)',
+      "INSERT INTO dept (id, dept_name) VALUES (1, 'Sales')",
+      "INSERT INTO dept (id, dept_name) VALUES (2, 'IT')",
+      "INSERT INTO dept (id, dept_name) VALUES (3, 'HR')",
+      "INSERT INTO emp (id, emp_name, dept_id) VALUES (1, 'Alice', 1)",
+      "INSERT INTO emp (id, emp_name, dept_id) VALUES (2, 'Bob', 2)",
+      "INSERT INTO emp (id, emp_name, dept_id) VALUES (3, 'Carol', 99)",
+      `SELECT e.emp_name, d.dept_name
+       FROM emp e
+       LEFT JOIN dept d ON e.dept_id = d.id
+       ORDER BY e.id`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const expected = [
+        ['Alice', 'Sales'],
+        ['Bob', 'IT'],
+        ['Carol', null],
+      ];
+      const rows = selectResultRows(result);
+      if (JSON.stringify(rows) !== JSON.stringify(expected)) {
+        throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(rows)}`);
+      }
+    },
+  },
+  {
+    name: 'RIGHT JOIN keeps every right row, null-filling an unmatched left side',
+    queries: [
+      'CREATE TABLE dept (id INT PRIMARY KEY, dept_name VARCHAR(50))',
+      'CREATE TABLE emp (id INT PRIMARY KEY, emp_name VARCHAR(50), dept_id INT)',
+      "INSERT INTO dept (id, dept_name) VALUES (1, 'Sales')",
+      "INSERT INTO dept (id, dept_name) VALUES (2, 'IT')",
+      "INSERT INTO dept (id, dept_name) VALUES (3, 'HR')",
+      "INSERT INTO emp (id, emp_name, dept_id) VALUES (1, 'Alice', 1)",
+      "INSERT INTO emp (id, emp_name, dept_id) VALUES (2, 'Bob', 2)",
+      "INSERT INTO emp (id, emp_name, dept_id) VALUES (3, 'Carol', 99)",
+      `SELECT e.emp_name, d.dept_name
+       FROM emp e
+       RIGHT JOIN dept d ON e.dept_id = d.id
+       ORDER BY d.id`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const expected = [
+        ['Alice', 'Sales'],
+        ['Bob', 'IT'],
+        [null, 'HR'],
+      ];
+      const rows = selectResultRows(result);
+      if (JSON.stringify(rows) !== JSON.stringify(expected)) {
+        throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(rows)}`);
+      }
+    },
+  },
+  {
+    name: 'FULL OUTER JOIN keeps unmatched rows from both sides',
+    queries: [
+      'CREATE TABLE dept (id INT PRIMARY KEY, dept_name VARCHAR(50))',
+      'CREATE TABLE emp (id INT PRIMARY KEY, emp_name VARCHAR(50), dept_id INT)',
+      "INSERT INTO dept (id, dept_name) VALUES (1, 'Sales')",
+      "INSERT INTO dept (id, dept_name) VALUES (2, 'IT')",
+      "INSERT INTO dept (id, dept_name) VALUES (3, 'HR')",
+      "INSERT INTO emp (id, emp_name, dept_id) VALUES (1, 'Alice', 1)",
+      "INSERT INTO emp (id, emp_name, dept_id) VALUES (2, 'Bob', 2)",
+      "INSERT INTO emp (id, emp_name, dept_id) VALUES (3, 'Carol', 99)",
+      `SELECT e.emp_name, d.dept_name
+       FROM emp e
+       FULL OUTER JOIN dept d ON e.dept_id = d.id`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const rows = selectResultRows(result);
+      if (rows.length !== 4) {
+        throw new Error(`Expected 4 rows, got ${rows.length}`);
+      }
+      const hasCarolUnmatched = rows.some(r => r[0] === 'Carol' && r[1] === null);
+      const hasHrUnmatched = rows.some(r => r[0] === null && r[1] === 'HR');
+      const hasSales = rows.some(r => r[0] === 'Alice' && r[1] === 'Sales');
+      const hasIt = rows.some(r => r[0] === 'Bob' && r[1] === 'IT');
+      if (!hasCarolUnmatched || !hasHrUnmatched || !hasSales || !hasIt) {
+        throw new Error(`Missing an expected row in ${JSON.stringify(rows)}`);
+      }
+    },
+  },
+  {
+    name: "COUNT(column) skips an outer join's null-filled rows, unlike COUNT(*)",
+    queries: [
+      'CREATE TABLE dept (id INT PRIMARY KEY, dept_name VARCHAR(50))',
+      'CREATE TABLE emp (id INT PRIMARY KEY, emp_name VARCHAR(50), dept_id INT)',
+      "INSERT INTO dept (id, dept_name) VALUES (1, 'Sales')",
+      "INSERT INTO emp (id, emp_name, dept_id) VALUES (1, 'Alice', 1)",
+      "INSERT INTO emp (id, emp_name, dept_id) VALUES (2, 'Carol', 99)",
+      `SELECT COUNT(*), COUNT(d.dept_name)
+       FROM emp e
+       LEFT JOIN dept d ON e.dept_id = d.id`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const rows = selectResultRows(result);
+      if (JSON.stringify(rows) !== JSON.stringify([[2, 1]])) {
+        throw new Error(`Expected [[2, 1]], got ${JSON.stringify(rows)}`);
+      }
+    },
+  },
+  {
+    name: "WHERE treats an outer join's null-filled column as never matching",
+    queries: [
+      'CREATE TABLE dept (id INT PRIMARY KEY, dept_name VARCHAR(50))',
+      'CREATE TABLE emp (id INT PRIMARY KEY, emp_name VARCHAR(50), dept_id INT)',
+      "INSERT INTO dept (id, dept_name) VALUES (1, 'Sales')",
+      "INSERT INTO emp (id, emp_name, dept_id) VALUES (1, 'Alice', 1)",
+      "INSERT INTO emp (id, emp_name, dept_id) VALUES (2, 'Carol', 99)",
+      `SELECT e.emp_name FROM emp e LEFT JOIN dept d ON e.dept_id = d.id WHERE d.dept_name = 'Sales'`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const rows = selectResultRows(result);
+      if (JSON.stringify(rows) !== JSON.stringify([['Alice']])) {
+        throw new Error(`Expected [['Alice']], got ${JSON.stringify(rows)}`);
+      }
+    },
+  },
+  {
+    name: 'LEFT OUTER JOIN and FULL JOIN (without the explicit OUTER keyword) both parse',
+    queries: [
+      'CREATE TABLE dept (id INT PRIMARY KEY, dept_name VARCHAR(50))',
+      'CREATE TABLE emp (id INT PRIMARY KEY, emp_name VARCHAR(50), dept_id INT)',
+      "INSERT INTO dept (id, dept_name) VALUES (1, 'Sales')",
+      "INSERT INTO emp (id, emp_name, dept_id) VALUES (1, 'Alice', 1)",
+      `SELECT e.emp_name FROM emp e LEFT OUTER JOIN dept d ON e.dept_id = d.id`,
+      `SELECT e.emp_name FROM emp e FULL JOIN dept d ON e.dept_id = d.id`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const rows = selectResultRows(result);
+      if (JSON.stringify(rows) !== JSON.stringify([['Alice']])) {
+        throw new Error(`Expected [['Alice']], got ${JSON.stringify(rows)}`);
+      }
+    },
+  },
+  {
+    name: 'A single submission can chain several statements with semicolons',
+    queries: [
+      `CREATE TABLE notes (
+         id INT PRIMARY KEY AUTO_INCREMENT,
+         text VARCHAR(200) NOT NULL
+       );
+
+       INSERT INTO notes (text) VALUES ('My first note');
+
+       SELECT * FROM notes;`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const expected = [[1, 'My first note']];
+      const rows = selectResultRows(result);
+      if (JSON.stringify(rows) !== JSON.stringify(expected)) {
+        throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(rows)}`);
+      }
+    },
+  },
+  {
+    name: 'A chained submission reports modified even when it ends in a SELECT',
+    queries: ["CREATE TABLE scratch (id INT PRIMARY KEY); SELECT * FROM scratch;"],
+    shouldPass: true,
+    assert: result => {
+      if (!result.meta.modified) {
+        throw new Error('Expected meta.modified to be true because CREATE TABLE ran earlier in the batch');
+      }
+    },
+  },
+  {
+    name: 'A missing semicolon between chained statements is a syntax error',
+    queries: ['CREATE TABLE a (id INT PRIMARY KEY) CREATE TABLE b (id INT PRIMARY KEY)'],
+    shouldPass: false,
+    expectedErrorSubstring: 'Expected ; between statements',
+  },
+  {
+    name: 'An empty query is a clear error rather than a crash',
+    queries: ['   '],
+    shouldPass: false,
+    expectedErrorSubstring: 'Empty query',
+  },
 ];
 
 export function runTests({ silent = false } = {}) {

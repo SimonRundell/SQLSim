@@ -257,6 +257,39 @@ INNER JOIN tutor_groups t ON s.tutor_group_id = t.tutor_group_id
 INNER JOIN grades g ON s.student_id = g.student_id
 ```
 
+`INNER JOIN` only keeps rows with a match on both sides. Sometimes you want to keep rows
+that *don't* have a match too:
+
+- `LEFT [OUTER] JOIN` keeps every row from the left table, filling the right side with
+  `NULL` when there's no match
+- `RIGHT [OUTER] JOIN` does the same the other way round - every row from the right table
+- `FULL [OUTER] JOIN` keeps unmatched rows from both sides
+
+The sample data doesn't have any unmatched rows to demonstrate this with, so here's a
+scratch example - run each statement on its own:
+
+```sql
+CREATE TABLE dept (id INT PRIMARY KEY, dept_name VARCHAR(50));
+CREATE TABLE emp (id INT PRIMARY KEY, emp_name VARCHAR(50), dept_id INT);
+INSERT INTO dept (id, dept_name) VALUES (1, 'Sales');
+INSERT INTO dept (id, dept_name) VALUES (2, 'HR');       -- no employees yet
+INSERT INTO emp (id, emp_name, dept_id) VALUES (1, 'Alice', 1);
+INSERT INTO emp (id, emp_name, dept_id) VALUES (2, 'Bob', 99); -- dept_id matches nothing
+
+-- Every employee appears, even Bob (dept_name comes back NULL)
+SELECT e.emp_name, d.dept_name FROM emp e LEFT JOIN dept d ON e.dept_id = d.id;
+
+-- Every department appears, even HR (emp_name comes back NULL)
+SELECT e.emp_name, d.dept_name FROM emp e RIGHT JOIN dept d ON e.dept_id = d.id;
+
+-- Both: Bob AND HR appear, each with a NULL on the other side
+SELECT e.emp_name, d.dept_name FROM emp e FULL OUTER JOIN dept d ON e.dept_id = d.id;
+```
+
+A `NULL` from an outer join behaves exactly like any other `NULL`: `COUNT(column)` skips it,
+and a comparison against it in `WHERE` is never true (use `IS NULL` in real SQL to test for
+it specifically - not yet supported here).
+
 **Try it:** join `students` to `grades` (on `student_id`), and select `forename`, `module`
 and `score`.
 
@@ -405,12 +438,10 @@ SELECT students.tutor_group_id FROM students INNER JOIN tutor_groups ON students
 
 This is a teaching tool covering the core of SQL, not the whole standard. Not available:
 
-- ❌ LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN (only `INNER JOIN`)
 - ❌ Correlated subqueries (one that refers back to the outer query)
-- ❌ CASE expressions
 - ❌ A derived table as a JOIN target (only in the main `FROM`)
 - ❌ Subqueries in the `SELECT` list
-- ❌ CASE statements
+- ❌ CASE expressions
 
 ---
 

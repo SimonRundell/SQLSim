@@ -4,7 +4,7 @@
  */
 
 import { tokenize } from './tokenizer.js';
-import { parse } from './parser.js';
+import { parseStatements } from './parser.js';
 import { validate, validateWhereSubqueries, getSelectColumnNames, getDerivedTableColumnNames } from './validator.js';
 import { schema } from '../data/schema.js';
 
@@ -97,9 +97,14 @@ export class Executor {
     // Step 1: Build initial rowset from FROM table
     let rowset = this.buildFromRowset();
 
-    // Step 2: Apply each JOIN in turn
+    // Step 2: Apply each JOIN in turn. foldedKeys tracks every table key
+    // already folded into rowset (FROM plus every join processed so far) -
+    // an outer join needs it to null-fill "the whole left side" when a row
+    // from its right table has no match at all.
+    const foldedKeys = [this.getFromKey()];
     for (const join of this.ast.joins) {
-      rowset = this.applyJoin(rowset, join);
+      rowset = this.applyJoin(rowset, join, foldedKeys);
+      foldedKeys.push(join.alias || join.table);
     }
 
     // Step 3: Apply WHERE filter
@@ -164,6 +169,13 @@ export class Executor {
         steps: [],
       },
     };
+  }
+
+  /** The table key (alias, or table name when there's no alias) the FROM source is namespaced under in a combined row. */
+  getFromKey() {
+    return this.ast.from.type === 'DerivedTable'
+      ? this.ast.from.alias
+      : (this.ast.from.alias || this.ast.from.name);
   }
 
   buildFromRowset() {
@@ -247,36 +259,77 @@ export class Executor {
    * Applies one JOIN clause against the rowset accumulated so far. Called
    * once per join in ast.joins, in order - so a later join's ON clause can
    * reference any table already folded into leftRowset, not just the one
-   * from the immediately preceding join.
+   * from the immediately preceding join. `foldedKeys` is every table key
+   * already part of leftRowset's shape, needed to null-fill "the whole left
+   * side" for a RIGHT/FULL join's unmatched right rows.
+   *
+   * - INNER: only matched pairs.
+   * - LEFT: matched pairs, plus every left row that matched nothing (right
+   *   side null-filled).
+   * - RIGHT: matched pairs, plus every right row that matched nothing (left
+   *   side null-filled).
+   * - FULL: matched pairs, plus both kinds of unmatched row.
    */
-  applyJoin(leftRowset, join) {
+  applyJoin(leftRowset, join, foldedKeys) {
     const rightTableName = join.table;
     const rightKey = join.alias || rightTableName;
     const rightTableData = this.data[rightTableName] || [];
     const joinCondition = join.on;
+    const joinType = join.joinType;
 
     const result = [];
+    const matchedRightIndexes = new Set();
 
     for (const leftRow of leftRowset) {
-      for (const rightRow of rightTableData) {
-        // Create merged combined row, namespaced by alias (or table name)
+      let matchedAny = false;
+
+      for (let i = 0; i < rightTableData.length; i++) {
+        const rightRow = rightTableData[i];
         const combinedRow = {
           ...leftRow,
           [rightKey]: { ...rightRow },
         };
 
-        // Evaluate join condition
         const leftValue = this.evalOperand(joinCondition.left, combinedRow);
         const rightValue = this.evalOperand(joinCondition.right, combinedRow);
         const operator = joinCondition.operator || '=';
 
         if (this.compareValues(leftValue, rightValue, operator)) {
           result.push(combinedRow);
+          matchedAny = true;
+          matchedRightIndexes.add(i);
         }
+      }
+
+      if (!matchedAny && (joinType === 'LEFT' || joinType === 'FULL')) {
+        result.push({ ...leftRow, [rightKey]: this.buildNullRow(rightKey) });
+      }
+    }
+
+    if (joinType === 'RIGHT' || joinType === 'FULL') {
+      for (let i = 0; i < rightTableData.length; i++) {
+        if (matchedRightIndexes.has(i)) continue;
+
+        const nullLeftSide = {};
+        for (const key of foldedKeys) {
+          nullLeftSide[key] = this.buildNullRow(key);
+        }
+        result.push({ ...nullLeftSide, [rightKey]: { ...rightTableData[i] } });
       }
     }
 
     return result;
+  }
+
+  /** An all-null row for the table at `key`, used to fill the unmatched side of an outer join. */
+  buildNullRow(key) {
+    const entry = this.validator.tableEntries.find(e => e.key === key);
+    const columns = entry ? this.validator.getTableColumns(entry.name) : [];
+    const row = {};
+    for (const column of columns) {
+      row[column] = null;
+    }
+    return row;
   }
 
   applyWhere(rowset) {
@@ -1050,25 +1103,45 @@ export function executeQuery({ queryText, tables, schema: schemaObj }) {
     // Tokenize
     const tokens = tokenize(queryText);
 
-    // Parse
-    const ast = parse(tokens);
+    // Parse every statement in the submission (e.g. a CREATE TABLE, some
+    // INSERTs, then a SELECT), not just the first one.
+    const statements = parseStatements(tokens);
 
-    // For DDL and DML statements, we don't validate with the old validator
-    const needsValidation = ast.type === 'Query';
+    // Execute each in turn against the same tables/schema, so earlier
+    // statements' effects (a new table, inserted rows) are visible to
+    // later ones. The final statement's result is what gets displayed;
+    // `modified` is true if ANY statement in the batch changed data, so
+    // the UI still refreshes even when the batch ends in a plain SELECT.
+    let lastResult = null;
+    let anyModified = false;
 
-    // Validate only for SELECT queries
-    const validator = needsValidation ? validate(ast, schemaObj || schema) : null;
+    for (const ast of statements) {
+      // For DDL and DML statements, we don't validate with the old validator
+      const needsValidation = ast.type === 'Query';
 
-    // UPDATE/DELETE never go through the Validator for their own column
-    // scope, but any subqueries embedded in their WHERE clause still need
-    // validating (and a Validator stashed on them) before they can run.
-    if ((ast.type === 'Update' || ast.type === 'Delete') && ast.where) {
-      validateWhereSubqueries(ast.where.expr, schemaObj || schema);
+      // Validate only for SELECT queries
+      const validator = needsValidation ? validate(ast, schemaObj || schema) : null;
+
+      // UPDATE/DELETE never go through the Validator for their own column
+      // scope, but any subqueries embedded in their WHERE clause still need
+      // validating (and a Validator stashed on them) before they can run.
+      if ((ast.type === 'Update' || ast.type === 'Delete') && ast.where) {
+        validateWhereSubqueries(ast.where.expr, schemaObj || schema);
+      }
+
+      const executor = new Executor(ast, tables, validator, schemaObj || schema);
+      lastResult = executor.execute();
+
+      if (lastResult.meta && lastResult.meta.modified) {
+        anyModified = true;
+      }
     }
 
-    // Execute
-    const executor = new Executor(ast, tables, validator, schemaObj || schema);
-    return executor.execute();
+    if (anyModified && lastResult && lastResult.meta) {
+      lastResult.meta.modified = true;
+    }
+
+    return lastResult;
   } catch (error) {
     // Re-throw SQL errors as-is
     if (error.name === 'SqlError') {

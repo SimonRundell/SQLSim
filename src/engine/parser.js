@@ -4,7 +4,7 @@
  */
 
 import { TokenType } from './tokenizer.js';
-import { createSyntaxError, createUnsupportedFeatureError } from './errors.js';
+import { createSyntaxError } from './errors.js';
 
 export class Parser {
   constructor(tokens) {
@@ -66,7 +66,10 @@ export class Parser {
     const from = this.parseTableRef();
 
     const joins = [];
-    while (this.checkKeyword('INNER') || this.checkKeyword('JOIN')) {
+    while (
+      this.checkKeyword('INNER') || this.checkKeyword('JOIN') ||
+      this.checkKeyword('LEFT') || this.checkKeyword('RIGHT') || this.checkKeyword('FULL')
+    ) {
       joins.push(this.parseJoinClause());
     }
 
@@ -232,12 +235,25 @@ export class Parser {
   }
 
   parseJoinClause() {
-    // join_clause := [INNER] JOIN IDENT [ [AS] IDENT ] ON column_ref "=" column_ref
+    // join_clause := ( [INNER] | LEFT [OUTER] | RIGHT [OUTER] | FULL [OUTER] )
+    //                JOIN IDENT [ [AS] IDENT ] ON column_ref "=" column_ref
     let joinType = 'INNER';
 
     if (this.checkKeyword('INNER')) {
       this.advance();
       joinType = 'INNER';
+    } else if (this.checkKeyword('LEFT')) {
+      this.advance();
+      if (this.checkKeyword('OUTER')) this.advance();
+      joinType = 'LEFT';
+    } else if (this.checkKeyword('RIGHT')) {
+      this.advance();
+      if (this.checkKeyword('OUTER')) this.advance();
+      joinType = 'RIGHT';
+    } else if (this.checkKeyword('FULL')) {
+      this.advance();
+      if (this.checkKeyword('OUTER')) this.advance();
+      joinType = 'FULL';
     }
 
     this.expectKeyword('JOIN');
@@ -1010,12 +1026,6 @@ export class Parser {
 
   expectKeyword(keyword) {
     const token = this.current();
-    
-    // Check for unsupported features
-    const unsupportedKeywords = ['LEFT', 'RIGHT', 'OUTER', 'FULL'];
-    if (token.type === TokenType.KEYWORD && unsupportedKeywords.includes(token.value.toUpperCase())) {
-      throw createUnsupportedFeatureError(token.value.toUpperCase(), token.start);
-    }
 
     if (token.type !== TokenType.KEYWORD || token.value.toUpperCase() !== keyword.toUpperCase()) {
       throw createSyntaxError(
@@ -1030,4 +1040,35 @@ export class Parser {
 export function parse(tokens) {
   const parser = new Parser(tokens);
   return parser.parse();
+}
+
+/**
+ * Parses every statement in `tokens`, separated by semicolons - the query
+ * editor runs a whole submission (e.g. a CREATE TABLE, a couple of INSERTs,
+ * then a SELECT) as one sequence, not just the first statement in it. A
+ * trailing semicolon at the very end is still optional.
+ */
+export function parseStatements(tokens) {
+  const parser = new Parser(tokens);
+  const statements = [];
+
+  while (!parser.check(TokenType.EOF)) {
+    statements.push(parser.parseStatement());
+
+    if (parser.check(TokenType.SEMICOLON)) {
+      parser.advance();
+    } else if (!parser.check(TokenType.EOF)) {
+      const token = parser.current();
+      throw createSyntaxError(
+        `Expected ; between statements, got ${token.type === TokenType.KEYWORD ? token.value : token.type}`,
+        token.start
+      );
+    }
+  }
+
+  if (statements.length === 0) {
+    throw createSyntaxError('Empty query', 0);
+  }
+
+  return statements;
 }

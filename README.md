@@ -7,7 +7,7 @@ A client-side SQL query simulator built with React and Vite for learning SQL SEL
 - ✅ **SELECT** queries with column selection or `*`
 - ✅ **DISTINCT** for deduping result rows
 - ✅ **FROM** single table
-- ✅ **INNER JOIN** with ON conditions, chainable across multiple tables in one query
+- ✅ **JOIN**: `INNER`, `LEFT [OUTER]`, `RIGHT [OUTER]`, `FULL [OUTER]`, chainable across multiple tables in one query
 - ✅ **WHERE** clauses with `AND`, `OR`, `NOT`, `IN`, `BETWEEN`, and parentheses for grouping
 - ✅ **Subqueries**: `IN (SELECT ...)`, scalar `= (SELECT ...)`, `EXISTS (SELECT ...)`, and derived tables in `FROM`
 - ✅ **GROUP BY** for data aggregation, with **HAVING** to filter groups
@@ -43,7 +43,7 @@ multiple lines */
 ```sql
 SELECT [DISTINCT] <columns or * or COUNT(*)>
 FROM <table> | (<subquery>) AS <alias>
-[INNER JOIN <table> ON <column> = <column>]...
+[(INNER | LEFT [OUTER] | RIGHT [OUTER] | FULL [OUTER]) JOIN <table> ON <column> = <column>]...
 [WHERE <condition>]
 [GROUP BY <column> [, <column> ...]]
 [HAVING <condition>]
@@ -123,6 +123,30 @@ SELECT s.forename, t.tutor_name, g.module, g.score
 FROM students s
 INNER JOIN tutor_groups t ON s.tutor_group_id = t.tutor_group_id
 INNER JOIN grades g ON s.student_id = g.student_id
+```
+
+`INNER JOIN` only keeps rows with a match on both sides. `LEFT [OUTER] JOIN` keeps every row
+from the left table even without a match, filling the right side with `NULL`; `RIGHT [OUTER]
+JOIN` does the same from the right; `FULL [OUTER] JOIN` keeps unmatched rows from both sides.
+The sample data has no unmatched rows to show this with, so here's a scratch example - run
+each statement on its own, one `▶ Run Query` click at a time:
+
+```sql
+CREATE TABLE dept (id INT PRIMARY KEY, dept_name VARCHAR(50));
+CREATE TABLE emp (id INT PRIMARY KEY, emp_name VARCHAR(50), dept_id INT);
+INSERT INTO dept (id, dept_name) VALUES (1, 'Sales');
+INSERT INTO dept (id, dept_name) VALUES (2, 'HR');       -- no employees yet
+INSERT INTO emp (id, emp_name, dept_id) VALUES (1, 'Alice', 1);
+INSERT INTO emp (id, emp_name, dept_id) VALUES (2, 'Bob', 99); -- dept_id matches nothing
+
+-- Every employee appears, even Bob (dept_name comes back NULL)
+SELECT e.emp_name, d.dept_name FROM emp e LEFT JOIN dept d ON e.dept_id = d.id;
+
+-- Every department appears, even HR (emp_name comes back NULL)
+SELECT e.emp_name, d.dept_name FROM emp e RIGHT JOIN dept d ON e.dept_id = d.id;
+
+-- Both: Bob AND HR appear, each with a NULL on the other side
+SELECT e.emp_name, d.dept_name FROM emp e FULL OUTER JOIN dept d ON e.dept_id = d.id;
 ```
 
 ### 4. Complex Query with All Features
@@ -370,7 +394,7 @@ The simulator provides clear, student-friendly error messages:
 - **UNKNOWN_TABLE**: Table doesn't exist
 - **UNKNOWN_COLUMN**: Column not found in any accessible table
 - **AMBIGUOUS_COLUMN**: Column exists in multiple tables (needs qualification)
-- **UNSUPPORTED_FEATURE**: Feature not yet implemented (e.g., LEFT JOIN, CASE)
+- **UNSUPPORTED_FEATURE**: Feature not yet implemented (e.g., CASE, a derived table as a JOIN target)
 
 ## Architecture
 
@@ -393,11 +417,13 @@ src/
 
 ## Future Enhancements
 
-- LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN
+- A derived table as a JOIN target (currently only allowed in the main FROM)
+- Subqueries in the SELECT list
 - CASE expressions
 - CREATE TEMP TABLE
 - Correlated subqueries
 - Visual query explanation/execution plan
+- Multiple SQL statements in a single Run (currently one statement per click)
 
 ## Testing
 

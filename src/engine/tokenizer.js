@@ -30,6 +30,8 @@ const KEYWORDS = new Set([
   'SELECT', 'FROM', 'WHERE', 'INNER', 'JOIN', 'ON',
   'ORDER', 'BY', 'ASC', 'DESC', 'LIMIT', 'AND',
   'GROUP', 'HAVING', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'LIKE', 'AS',
+  // Outer join keywords
+  'LEFT', 'RIGHT', 'FULL', 'OUTER',
   // Boolean and null literals
   'TRUE', 'FALSE', 'NULL',
   // DDL and DML keywords
@@ -40,8 +42,6 @@ const KEYWORDS = new Set([
   'DISTINCT',
   // WHERE clause logical/comparison keywords
   'OR', 'NOT', 'IN', 'BETWEEN', 'EXISTS',
-  // Unsupported keywords for error detection
-  'LEFT', 'RIGHT', 'OUTER', 'FULL',
 ]);
 
 export class Token {

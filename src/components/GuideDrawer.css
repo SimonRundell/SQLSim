@@ -243,6 +243,33 @@
   height: auto;
 }
 
+.join-venn-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 18px;
+}
+
+.join-venn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 110px;
+}
+
+.join-venn svg {
+  width: 100%;
+  height: auto;
+}
+
+.join-venn-label {
+  margin: 4px 0 0 0;
+  font-size: 0.8em;
+  font-weight: 600;
+  color: #495057;
+  text-align: center;
+}
+
 /* Challenge box */
 
 .challenge-box {

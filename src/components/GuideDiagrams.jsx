@@ -198,3 +198,55 @@ export function SchemaOverview() {
     </svg>
   );
 }
+
+const VENN_R = 42;
+const VENN_LEFT_CX = 46;
+const VENN_RIGHT_CX = 84;
+const VENN_CY = 55;
+const VENN_WIDTH = 130;
+const VENN_HEIGHT = 110;
+
+/** One small two-circle Venn diagram showing which rows a single JOIN type keeps. */
+function JoinTypeVenn({ type, leftLabel, rightLabel }) {
+  const clipId = `venn-clip-${type}`;
+  const includesLeft = type === 'LEFT' || type === 'FULL';
+  const includesRight = type === 'RIGHT' || type === 'FULL';
+  const includesIntersectionOnly = type === 'INNER';
+
+  return (
+    <div className="join-venn">
+      <svg viewBox={`0 0 ${VENN_WIDTH} ${VENN_HEIGHT}`} role="img" aria-label={`${type} JOIN keeps: ${type === 'INNER' ? 'matching rows only' : type === 'FULL' ? 'all rows from both tables' : `all rows from the ${type === 'LEFT' ? 'left' : 'right'} table`}`}>
+        <defs>
+          <clipPath id={clipId}>
+            <circle cx={VENN_LEFT_CX} cy={VENN_CY} r={VENN_R} />
+          </clipPath>
+        </defs>
+
+        {includesLeft && <circle cx={VENN_LEFT_CX} cy={VENN_CY} r={VENN_R} fill="#0066cc" fillOpacity="0.55" />}
+        {includesRight && <circle cx={VENN_RIGHT_CX} cy={VENN_CY} r={VENN_R} fill="#28a745" fillOpacity="0.55" />}
+        {includesIntersectionOnly && (
+          <circle cx={VENN_RIGHT_CX} cy={VENN_CY} r={VENN_R} fill="#6f42c1" clipPath={`url(#${clipId})`} />
+        )}
+
+        <circle cx={VENN_LEFT_CX} cy={VENN_CY} r={VENN_R} fill="none" stroke="#0066cc" strokeWidth="2" />
+        <circle cx={VENN_RIGHT_CX} cy={VENN_CY} r={VENN_R} fill="none" stroke="#28a745" strokeWidth="2" />
+
+        <text x={VENN_LEFT_CX - 20} y={VENN_CY + 3} fontSize="11" fontWeight="700" fill="#0052a3" textAnchor="middle">{leftLabel}</text>
+        <text x={VENN_RIGHT_CX + 20} y={VENN_CY + 3} fontSize="11" fontWeight="700" fill="#1e7e34" textAnchor="middle">{rightLabel}</text>
+      </svg>
+      <p className="join-venn-label">{type} JOIN</p>
+    </div>
+  );
+}
+
+/** All four JOIN types side by side, so a student can compare which rows each one keeps. */
+export function JoinTypeComparison({ leftLabel = 'emp', rightLabel = 'dept' }) {
+  return (
+    <div className="join-venn-row">
+      <JoinTypeVenn type="INNER" leftLabel={leftLabel} rightLabel={rightLabel} />
+      <JoinTypeVenn type="LEFT" leftLabel={leftLabel} rightLabel={rightLabel} />
+      <JoinTypeVenn type="RIGHT" leftLabel={leftLabel} rightLabel={rightLabel} />
+      <JoinTypeVenn type="FULL" leftLabel={leftLabel} rightLabel={rightLabel} />
+    </div>
+  );
+}

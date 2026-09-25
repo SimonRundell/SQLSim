@@ -8,7 +8,7 @@
  * free-form JSX for everything else (explanation, illustrative examples).
  */
 
-import { JoinDiagram, SchemaOverview } from '../components/GuideDiagrams';
+import { JoinDiagram, SchemaOverview, JoinTypeComparison } from '../components/GuideDiagrams';
 
 export const guideSections = [
   'Getting Started',
@@ -329,6 +329,53 @@ ORDER BY g.score DESC`,
     },
   },
   {
+    id: 'outer-joins',
+    section: 'Joining Tables',
+    title: 'Outer Joins: LEFT, RIGHT, FULL',
+    diagram: <JoinTypeComparison leftLabel="emp" rightLabel="dept" />,
+    body: (
+      <>
+        <p>
+          <code>INNER JOIN</code> only keeps rows with a match on both sides - shown above as
+          just the overlap. Sometimes you want to keep rows that <em>don't</em> have a match too:
+        </p>
+        <ul>
+          <li><code>LEFT [OUTER] JOIN</code> - every row from the left table, right side <code>NULL</code> when there's no match</li>
+          <li><code>RIGHT [OUTER] JOIN</code> - every row from the right table, left side <code>NULL</code> when there's no match</li>
+          <li><code>FULL [OUTER] JOIN</code> - every row from both tables</li>
+        </ul>
+        <p>
+          The sample data doesn't have any unmatched rows to show this with (every student has a
+          tutor group and at least one grade), so here's a scratch example. Bob's <code>dept_id</code>{' '}
+          matches nothing, and HR has no employees:
+        </p>
+        <pre className="code-block">{`CREATE TABLE dept (id INT PRIMARY KEY, dept_name VARCHAR(50));
+CREATE TABLE emp (id INT PRIMARY KEY, emp_name VARCHAR(50), dept_id INT);
+INSERT INTO dept (id, dept_name) VALUES (1, 'Sales');
+INSERT INTO dept (id, dept_name) VALUES (2, 'HR');
+INSERT INTO emp (id, emp_name, dept_id) VALUES (1, 'Alice', 1);
+INSERT INTO emp (id, emp_name, dept_id) VALUES (2, 'Bob', 99);
+
+-- Every employee appears, even Bob (dept_name comes back NULL)
+SELECT e.emp_name, d.dept_name FROM emp e LEFT JOIN dept d ON e.dept_id = d.id;`}</pre>
+        <p>
+          A <code>NULL</code> from an outer join behaves like any other <code>NULL</code>:{' '}
+          <code>COUNT(column)</code> skips it, and comparing it in <code>WHERE</code> is never true.
+        </p>
+      </>
+    ),
+    challenge: {
+      prompt: "Run this to set up dept/emp, then see FULL OUTER JOIN keep both Bob and HR - each with a NULL on the other side.",
+      query: `CREATE TABLE dept (id INT PRIMARY KEY, dept_name VARCHAR(50));
+CREATE TABLE emp (id INT PRIMARY KEY, emp_name VARCHAR(50), dept_id INT);
+INSERT INTO dept (id, dept_name) VALUES (1, 'Sales');
+INSERT INTO dept (id, dept_name) VALUES (2, 'HR');
+INSERT INTO emp (id, emp_name, dept_id) VALUES (1, 'Alice', 1);
+INSERT INTO emp (id, emp_name, dept_id) VALUES (2, 'Bob', 99);
+SELECT e.emp_name, d.dept_name FROM emp e FULL OUTER JOIN dept d ON e.dept_id = d.id;`,
+    },
+  },
+  {
     id: 'aggregates',
     section: 'Aggregating Data',
     title: 'Aggregate Functions',
@@ -516,7 +563,6 @@ INNER JOIN tutor_groups ON students.tutor_group_id = tutor_groups.tutor_group_id
       <>
         <p>This is a teaching tool covering the core of SQL, not the whole standard. Not available:</p>
         <ul>
-          <li>❌ LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN (only <code>INNER JOIN</code>)</li>
           <li>❌ Correlated subqueries (one that refers back to the outer query)</li>
           <li>❌ A derived table as a JOIN target (only in the main <code>FROM</code>)</li>
           <li>❌ Subqueries in the <code>SELECT</code> list</li>
