@@ -283,6 +283,59 @@ export const testCases = [
       }
     },
   },
+  {
+    name: 'Parentheses override default AND/OR precedence',
+    queries: [
+      `SELECT * FROM students
+       WHERE (surname = 'Smith' OR surname = 'Brown') AND tutor_group_id = 2`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const expected = sampleData.students.filter(
+        s => (s.surname === 'Smith' || s.surname === 'Brown') && s.tutor_group_id === 2
+      ).length;
+      if (result.meta.rowCount !== expected) {
+        throw new Error(`Expected ${expected} rows, got ${result.meta.rowCount}`);
+      }
+    },
+  },
+  {
+    name: 'NOT applies to a whole parenthesized group',
+    queries: [`SELECT * FROM students WHERE NOT (tutor_group_id = 1 OR tutor_group_id = 3)`],
+    shouldPass: true,
+    assert: result => {
+      const expected = sampleData.students.filter(
+        s => !(s.tutor_group_id === 1 || s.tutor_group_id === 3)
+      ).length;
+      if (result.meta.rowCount !== expected) {
+        throw new Error(`Expected ${expected} rows, got ${result.meta.rowCount}`);
+      }
+    },
+  },
+  {
+    name: 'Nested parenthesized groups combine correctly',
+    queries: [
+      `SELECT * FROM students
+       WHERE (tutor_group_id = 1 OR tutor_group_id = 2) AND (surname = 'Smith' OR surname = 'Brown')`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const expected = sampleData.students.filter(
+        s =>
+          (s.tutor_group_id === 1 || s.tutor_group_id === 2) &&
+          (s.surname === 'Smith' || s.surname === 'Brown')
+      ).length;
+      if (result.meta.rowCount !== expected) {
+        throw new Error(`Expected ${expected} rows, got ${result.meta.rowCount}`);
+      }
+    },
+  },
+  {
+    name: 'Unbalanced parenthesis in WHERE is a syntax error',
+    queries: [`SELECT * FROM students WHERE (tutor_group_id = 1`],
+    shouldPass: false,
+    expectedErrorSubstring: 'Expected RPAREN',
+  },
 ];
 
 export function runTests({ silent = false } = {}) {

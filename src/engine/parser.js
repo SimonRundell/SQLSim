@@ -280,11 +280,23 @@ export class Parser {
   }
 
   parsePrimaryPredicate() {
-    // primary_predicate := TRUE | FALSE
+    // primary_predicate := "(" or_expr ")"
+    //                    | TRUE | FALSE
     //                    | operand [NOT] IN "(" literal ("," literal)* ")"
     //                    | operand [NOT] BETWEEN operand AND operand
     //                    | operand operator operand
     // operator := "=" | "!=" | "<>" | "<" | "<=" | ">" | ">=" | LIKE
+
+    // Parenthesized group - re-enter at the top of the precedence chain.
+    // The resulting subtree already encodes the grouping, so it's returned
+    // as-is; no wrapper node is needed.
+    if (this.check(TokenType.LPAREN)) {
+      this.advance();
+      const expr = this.parseOrExpr();
+      this.expect(TokenType.RPAREN);
+      return expr;
+    }
+
     const operand = this.parseOperand();
 
     // Standalone boolean literal (no comparison operator following)

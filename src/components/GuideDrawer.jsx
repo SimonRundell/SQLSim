@@ -479,13 +479,14 @@ WHERE module LIKE '%Data%' -- Contains Data`}</pre>
           </section>
 
           <section>
-            <h3>Combining Conditions: AND, OR, NOT, IN, BETWEEN</h3>
+            <h3>Combining Conditions: AND, OR, NOT, IN, BETWEEN, ( )</h3>
             <ul>
               <li><code>AND</code> - Both conditions must be true</li>
               <li><code>OR</code> - Either condition can be true</li>
               <li><code>NOT</code> - Negates the condition that follows it</li>
               <li><code>IN (a, b, ...)</code> - Matches any value in the list</li>
               <li><code>BETWEEN low AND high</code> - Matches an inclusive range</li>
+              <li><code>( )</code> - Groups conditions to control the order they're worked out in</li>
             </ul>
             <div className="example">
               <p><strong>Examples:</strong></p>
@@ -505,11 +506,17 @@ WHERE score BETWEEN 70 AND 89
 WHERE tutor_group_id NOT IN (1)
 WHERE score NOT BETWEEN 70 AND 89`}</pre>
               <p>
-                ⚠️ <strong>Note:</strong> There are no parentheses yet, so <code>AND</code> is
-                always worked out before <code>OR</code>, and <code>NOT</code> before that. Write
+                ⚠️ <strong>Note:</strong> Without parentheses, <code>AND</code> is always worked
+                out before <code>OR</code>, and <code>NOT</code> before that. Write
                 <code> WHERE a = 1 AND b = 2 OR c = 3</code> and it reads as{' '}
                 <code>(a = 1 AND b = 2) OR c = 3</code>.
               </p>
+              <p><strong>Use parentheses to change the order:</strong></p>
+              <pre className="code-block">{`-- Group the OR first, so it applies before the AND
+WHERE (surname = 'Smith' OR surname = 'Brown') AND tutor_group_id = 2
+
+-- NOT can negate a whole group
+WHERE NOT (tutor_group_id = 1 OR tutor_group_id = 3)`}</pre>
             </div>
           </section>
 
@@ -644,7 +651,6 @@ INNER JOIN tutor_groups ON students.tutor_group_id = tutor_groups.tutor_group_id
             <p>This is a teaching tool, so these features aren't available:</p>
             <ul>
               <li>❌ LEFT JOIN, RIGHT JOIN</li>
-              <li>❌ Parentheses to group conditions</li>
               <li>❌ Subqueries</li>
               <li>❌ CASE statements</li>
             </ul>

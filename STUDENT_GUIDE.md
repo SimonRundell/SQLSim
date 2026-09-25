@@ -65,7 +65,6 @@ Contains assessment scores with columns:
 ❌ **DON'T DO THIS:**
 - Double quotes: `"Smith"` ← Use single quotes instead
 - Backticks: `` `surname` `` ← Not supported
-- Parentheses to group conditions ← Not supported yet (AND binds tighter than OR, NOT binds tightest)
 
 ### Query Structure
 
@@ -211,7 +210,7 @@ SELECT * FROM students WHERE surname = 'Smith'
 ```sql
 -- ❌ These don't work yet:
 SELECT * FROM students LEFT JOIN tutor_groups ON ...                  -- Outer joins not supported
-SELECT * FROM students WHERE (a = 1 OR b = 2) AND c = 3               -- Parentheses not supported
+SELECT * FROM students WHERE score > 90 HAVING COUNT(*) > 1           -- HAVING not supported
 ```
 
 ### CONSTRAINT VIOLATION
@@ -288,7 +287,6 @@ WHERE tutor_groups.room = 'C3' AND students.surname = 'Moore'
 This is an MVP (Minimum Viable Product), so these features aren't available:
 - ❌ LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN
 - ❌ Multiple JOINs in one query
-- ❌ Parentheses to group conditions in WHERE
 - ❌ HAVING clause
 - ❌ Subqueries
 

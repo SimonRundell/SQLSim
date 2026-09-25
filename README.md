@@ -73,7 +73,7 @@ Note: All aggregate functions except COUNT(*) require a column name and work onl
 - **Comparison operators**: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`
 - **Pattern matching**: `LIKE` with `%` wildcard (e.g., `name LIKE 'S%'` for names starting with S)
 - **Range and membership**: `BETWEEN low AND high`, `IN (val1, val2, ...)` (also `NOT BETWEEN` / `NOT IN`)
-- **Logic**: `AND`, `OR`, `NOT` (no parentheses/grouping yet - `AND` binds tighter than `OR`, `NOT` binds tightest)
+- **Logic**: `AND`, `OR`, `NOT`, with parentheses `( )` for grouping (unparenthesized, `AND` binds tighter than `OR`, and `NOT` binds tightest)
 
 ### Sample Tables
 
@@ -197,7 +197,7 @@ GROUP BY module
 SELECT forename, surname FROM students WHERE surname LIKE '%son%'
 ```
 
-### 13. OR, NOT, IN and BETWEEN
+### 13. OR, NOT, IN, BETWEEN and parentheses
 
 ```sql
 -- Students in tutor group 1 OR tutor group 3
@@ -226,6 +226,15 @@ WHERE grades.score BETWEEN 70 AND 89
 -- (tutor_group_id = 1 AND surname = 'Smith') OR surname = 'Brown'
 SELECT forename, surname, tutor_group_id FROM students
 WHERE tutor_group_id = 1 AND surname = 'Smith' OR surname = 'Brown'
+
+-- Use parentheses to force OR to be evaluated first:
+-- (surname = 'Smith' OR surname = 'Brown') AND tutor_group_id = 2
+SELECT forename, surname, tutor_group_id FROM students
+WHERE (surname = 'Smith' OR surname = 'Brown') AND tutor_group_id = 2
+
+-- NOT can negate a whole parenthesized group
+SELECT forename, surname, tutor_group_id FROM students
+WHERE NOT (tutor_group_id = 1 OR tutor_group_id = 3)
 ```
 
 ## Getting Started
@@ -283,7 +292,6 @@ src/
 
 - LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN
 - Multiple JOINs
-- Parentheses for grouping in WHERE
 - HAVING clause
 - CREATE TEMP TABLE
 - Subqueries
