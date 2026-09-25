@@ -11,6 +11,18 @@ const clone = obj => JSON.parse(JSON.stringify(obj));
 
 const selectResultRows = result => (result?.rows ? result.rows : []);
 
+// Groups `rows` by `keyFn`, returning a Map of key -> rows in that group.
+// Used to independently recompute expected GROUP BY / HAVING results.
+const groupRowsBy = (rows, keyFn) => {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = keyFn(row);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  return groups;
+};
+
 export const testCases = [
   {
     name: 'Basic SELECT * returns all students',
@@ -535,6 +547,155 @@ export const testCases = [
         throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(rows)}`);
       }
     },
+  },
+  {
+    name: 'HAVING COUNT(*) filters groups by their row count',
+    queries: [
+      `SELECT tutor_group_id, COUNT(*) FROM students
+       GROUP BY tutor_group_id
+       HAVING COUNT(*) > 3
+       ORDER BY tutor_group_id`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const groups = groupRowsBy(sampleData.students, s => s.tutor_group_id);
+      const expected = [...groups.entries()]
+        .filter(([, rows]) => rows.length > 3)
+        .map(([id, rows]) => [id, rows.length])
+        .sort((a, b) => a[0] - b[0]);
+      const rows = selectResultRows(result);
+      if (JSON.stringify(rows) !== JSON.stringify(expected)) {
+        throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(rows)}`);
+      }
+    },
+  },
+  {
+    name: 'HAVING AVG(...) filters groups by a computed aggregate',
+    queries: [
+      `SELECT module, AVG(score) FROM grades
+       GROUP BY module
+       HAVING AVG(score) >= 80
+       ORDER BY module`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const groups = groupRowsBy(sampleData.grades, g => g.module);
+      const expectedModules = [...groups.entries()]
+        .filter(([, rows]) => rows.reduce((s, r) => s + r.score, 0) / rows.length >= 80)
+        .map(([module]) => module)
+        .sort();
+      const rows = selectResultRows(result);
+      const actualModules = rows.map(r => r[0]);
+      if (JSON.stringify(actualModules) !== JSON.stringify(expectedModules)) {
+        throw new Error(`Expected modules ${JSON.stringify(expectedModules)}, got ${JSON.stringify(actualModules)}`);
+      }
+    },
+  },
+  {
+    name: 'WHERE, GROUP BY and HAVING combine correctly',
+    queries: [
+      `SELECT module, COUNT(*) FROM grades
+       WHERE score >= 70
+       GROUP BY module
+       HAVING COUNT(*) > 5
+       ORDER BY module`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const groups = groupRowsBy(sampleData.grades.filter(g => g.score >= 70), g => g.module);
+      const expected = [...groups.entries()]
+        .filter(([, rows]) => rows.length > 5)
+        .map(([module, rows]) => [module, rows.length])
+        .sort((a, b) => (a[0] < b[0] ? -1 : 1));
+      const rows = selectResultRows(result);
+      if (JSON.stringify(rows) !== JSON.stringify(expected)) {
+        throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(rows)}`);
+      }
+    },
+  },
+  {
+    name: 'HAVING can AND together multiple aggregate conditions',
+    queries: [
+      `SELECT module, COUNT(*), AVG(score) FROM grades
+       GROUP BY module
+       HAVING COUNT(*) > 5 AND AVG(score) >= 75
+       ORDER BY module`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const groups = groupRowsBy(sampleData.grades, g => g.module);
+      const expectedModules = [...groups.entries()]
+        .filter(([, rows]) => rows.length > 5 && rows.reduce((s, r) => s + r.score, 0) / rows.length >= 75)
+        .map(([module]) => module)
+        .sort();
+      const rows = selectResultRows(result);
+      const actualModules = rows.map(r => r[0]);
+      if (JSON.stringify(actualModules) !== JSON.stringify(expectedModules)) {
+        throw new Error(`Expected modules ${JSON.stringify(expectedModules)}, got ${JSON.stringify(actualModules)}`);
+      }
+    },
+  },
+  {
+    name: 'HAVING can reference a GROUP BY column directly, not just aggregates',
+    queries: [
+      `SELECT tutor_group_id, COUNT(*) FROM students
+       GROUP BY tutor_group_id
+       HAVING tutor_group_id != 2
+       ORDER BY tutor_group_id`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const groups = groupRowsBy(sampleData.students, s => s.tutor_group_id);
+      const expected = [...groups.entries()]
+        .filter(([id]) => id !== 2)
+        .map(([id, rows]) => [id, rows.length])
+        .sort((a, b) => a[0] - b[0]);
+      const rows = selectResultRows(result);
+      if (JSON.stringify(rows) !== JSON.stringify(expected)) {
+        throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(rows)}`);
+      }
+    },
+  },
+  {
+    name: 'HAVING BETWEEN filters on an aggregate range',
+    queries: [
+      `SELECT module, COUNT(*) FROM grades
+       GROUP BY module
+       HAVING COUNT(*) BETWEEN 3 AND 10
+       ORDER BY module`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const groups = groupRowsBy(sampleData.grades, g => g.module);
+      const expected = [...groups.entries()]
+        .filter(([, rows]) => rows.length >= 3 && rows.length <= 10)
+        .map(([module, rows]) => [module, rows.length])
+        .sort((a, b) => (a[0] < b[0] ? -1 : 1));
+      const rows = selectResultRows(result);
+      if (JSON.stringify(rows) !== JSON.stringify(expected)) {
+        throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(rows)}`);
+      }
+    },
+  },
+  {
+    name: 'HAVING works without GROUP BY, filtering the whole table as one group',
+    queries: ['SELECT COUNT(*) FROM students HAVING COUNT(*) > 1000'],
+    shouldPass: true,
+    assert: result => {
+      if (result.meta.rowCount !== 0) {
+        throw new Error(`Expected 0 rows, got ${result.meta.rowCount}`);
+      }
+    },
+  },
+  {
+    name: 'A non-aggregated, non-GROUP-BY column in HAVING is a validation error',
+    queries: [
+      `SELECT tutor_group_id, COUNT(*) FROM students
+       GROUP BY tutor_group_id
+       HAVING surname = 'Smith'`,
+    ],
+    shouldPass: false,
+    expectedErrorSubstring: 'must appear in GROUP BY clause or be used in an aggregate function',
   },
 ];
 

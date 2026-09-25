@@ -120,6 +120,11 @@ export class Validator {
       this.validateWhereExpr(this.ast.where.expr);
     }
 
+    // Validate HAVING clause
+    if (this.ast.having) {
+      this.validateHavingExpr(this.ast.having.expr);
+    }
+
     // Validate ORDER BY
     if (this.ast.orderBy) {
       this.validateColumnRef(this.ast.orderBy.column);
@@ -163,6 +168,60 @@ export class Validator {
       case 'BooleanLiteral':
         break;
     }
+  }
+
+  /**
+   * Same tree shape as validateWhereExpr, but for a HAVING expression:
+   * operands may be aggregate functions (validated by their argument
+   * column), and any plain column reference must be one of the GROUP BY
+   * columns, since HAVING runs after grouping.
+   */
+  validateHavingExpr(node) {
+    switch (node.type) {
+      case 'And':
+      case 'Or':
+        this.validateHavingExpr(node.left);
+        this.validateHavingExpr(node.right);
+        break;
+      case 'Not':
+        this.validateHavingExpr(node.expr);
+        break;
+      case 'Comparison':
+        this.validateHavingOperand(node.left);
+        if (node.right.type === 'Subquery') {
+          this.validateScalarSubquery(node.right);
+        } else {
+          this.validateHavingOperand(node.right);
+        }
+        break;
+      case 'In':
+        this.validateHavingOperand(node.operand);
+        break;
+      case 'InSubquery':
+        this.validateHavingOperand(node.operand);
+        this.validateScalarSubquery(node.subquery);
+        break;
+      case 'Between':
+        this.validateHavingOperand(node.operand);
+        this.validateHavingOperand(node.low);
+        this.validateHavingOperand(node.high);
+        break;
+      case 'Exists':
+        this.validateSubquery(node.subquery);
+        break;
+      case 'BooleanLiteral':
+        break;
+    }
+  }
+
+  validateHavingOperand(operand) {
+    if (operand.type === 'ColumnRef') {
+      this.validateColumnRef(operand);
+      this.assertColumnInGroupBy(operand);
+    } else if (operand.type === 'AggregateFunction' && operand.argument.type === 'ColumnRef') {
+      this.validateColumnRef(operand.argument);
+    }
+    // Literal operands need no validation
   }
 
   /**
@@ -278,25 +337,36 @@ export class Validator {
     // When GROUP BY is present, SELECT items must be either:
     // 1. A column in the GROUP BY clause
     // 2. An aggregate function
-    
-    const groupByColumns = this.ast.groupBy.columns.map(col => {
-      const table = col.table || col.resolvedTable;
-      return `${table}.${col.column}`;
-    });
-
     for (const item of this.ast.select.items) {
       if (item.type === 'ColumnRef') {
-        const table = item.table || item.resolvedTable;
-        const fullColName = `${table}.${item.column}`;
-        
-        if (!groupByColumns.includes(fullColName)) {
-          throw createSyntaxError(
-            `Column '${item.column}' must appear in GROUP BY clause or be used in an aggregate function`,
-            item.position
-          );
-        }
+        this.assertColumnInGroupBy(item);
       }
       // Aggregate functions are allowed
+    }
+  }
+
+  /**
+   * Throws unless columnRef is one of the GROUP BY columns - the same rule
+   * SELECT items must follow when GROUP BY is present, and that HAVING's
+   * non-aggregate operands must follow too. With no GROUP BY at all, no
+   * plain column reference qualifies (only aggregate functions do).
+   */
+  assertColumnInGroupBy(columnRef) {
+    const groupByColumns = this.ast.groupBy
+      ? this.ast.groupBy.columns.map(col => {
+          const table = col.table || col.resolvedTable;
+          return `${table}.${col.column}`;
+        })
+      : [];
+
+    const table = columnRef.table || columnRef.resolvedTable;
+    const fullColName = `${table}.${columnRef.column}`;
+
+    if (!groupByColumns.includes(fullColName)) {
+      throw createSyntaxError(
+        `Column '${columnRef.column}' must appear in GROUP BY clause or be used in an aggregate function`,
+        columnRef.position
+      );
     }
   }
 

@@ -29,7 +29,7 @@ export const TokenType = {
 const KEYWORDS = new Set([
   'SELECT', 'FROM', 'WHERE', 'INNER', 'JOIN', 'ON',
   'ORDER', 'BY', 'ASC', 'DESC', 'LIMIT', 'AND',
-  'GROUP', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'LIKE', 'AS',
+  'GROUP', 'HAVING', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'LIKE', 'AS',
   // Boolean and null literals
   'TRUE', 'FALSE', 'NULL',
   // DDL and DML keywords
@@ -41,7 +41,7 @@ const KEYWORDS = new Set([
   // WHERE clause logical/comparison keywords
   'OR', 'NOT', 'IN', 'BETWEEN', 'EXISTS',
   // Unsupported keywords for error detection
-  'HAVING', 'LEFT', 'RIGHT', 'OUTER', 'FULL',
+  'LEFT', 'RIGHT', 'OUTER', 'FULL',
 ]);
 
 export class Token {

@@ -10,7 +10,7 @@ A client-side SQL query simulator built with React and Vite for learning SQL SEL
 - ✅ **INNER JOIN** with ON conditions
 - ✅ **WHERE** clauses with `AND`, `OR`, `NOT`, `IN`, `BETWEEN`, and parentheses for grouping
 - ✅ **Subqueries**: `IN (SELECT ...)`, scalar `= (SELECT ...)`, `EXISTS (SELECT ...)`, and derived tables in `FROM`
-- ✅ **GROUP BY** for data aggregation
+- ✅ **GROUP BY** for data aggregation, with **HAVING** to filter groups
 - ✅ **Aggregate Functions**: COUNT(), SUM(), AVG(), MIN(), MAX()
 - ✅ **ORDER BY** with ASC/DESC
 - ✅ **LIMIT** for result set size
@@ -37,11 +37,12 @@ FROM <table> | (<subquery>) AS <alias>
 [INNER JOIN <table> ON <column> = <column>]
 [WHERE <condition>]
 [GROUP BY <column> [, <column> ...]]
+[HAVING <condition>]
 [ORDER BY <column> [ASC|DESC]]
 [LIMIT <number>]
 ```
 
-A `<condition>` can combine comparisons with `AND`, `OR`, `NOT` and parentheses, and can use `IN (...)`, `BETWEEN ... AND ...`, `EXISTS (...)`, or a subquery in place of a value - see [Operators](#operators) and [Subqueries](#14-subqueries) below.
+A `<condition>` can combine comparisons with `AND`, `OR`, `NOT` and parentheses, and can use `IN (...)`, `BETWEEN ... AND ...`, `EXISTS (...)`, or a subquery in place of a value - see [Operators](#operators) and [Subqueries](#14-subqueries) below. A `<condition>` in `HAVING` can additionally use an aggregate function (e.g. `COUNT(*) > 5`), since it filters groups after `GROUP BY` rather than rows before it - see [HAVING](#15-having) below.
 
 ### DDL and DML
 
@@ -284,6 +285,42 @@ INNER JOIN tutor_groups g ON t.tutor_group_id = g.tutor_group_id
 
 **Not supported:** correlated subqueries (a subquery referencing the outer query's tables), a derived table as a JOIN target, subqueries in the SELECT list, and a literal in a subquery's SELECT list (e.g. `SELECT 1 FROM ...` - project a real column instead, e.g. `SELECT student_id FROM ...`, since only what `EXISTS` cares about is whether a row comes back).
 
+### 15. HAVING
+
+`WHERE` filters individual rows *before* grouping; `HAVING` filters groups *after* grouping, and is the only place aggregate functions can appear in a condition (they don't make sense in `WHERE`, since grouping hasn't happened yet).
+
+```sql
+-- Tutor groups with more than 3 students
+SELECT tutor_group_id, COUNT(*) FROM students
+GROUP BY tutor_group_id
+HAVING COUNT(*) > 3
+
+-- Modules with an average score of 80 or above
+SELECT module, AVG(score) FROM grades
+GROUP BY module
+HAVING AVG(score) >= 80
+
+-- WHERE, GROUP BY and HAVING all together: only count scores of 70+,
+-- then keep modules where that count is more than 5
+SELECT module, COUNT(*) FROM grades
+WHERE score >= 70
+GROUP BY module
+HAVING COUNT(*) > 5
+
+-- HAVING can AND/OR/NOT multiple conditions together, same as WHERE
+SELECT module, COUNT(*), AVG(score) FROM grades
+GROUP BY module
+HAVING COUNT(*) > 5 AND AVG(score) >= 75
+
+-- A HAVING condition can also reference a plain GROUP BY column directly,
+-- not just an aggregate
+SELECT tutor_group_id, COUNT(*) FROM students
+GROUP BY tutor_group_id
+HAVING tutor_group_id != 2
+```
+
+**Rule:** a column used in `HAVING` (outside of an aggregate function) must be one of the `GROUP BY` columns - the same rule that already applies to plain columns in the `SELECT` list of a grouped query.
+
 ## Getting Started
 
 ### Installation
@@ -314,7 +351,7 @@ The simulator provides clear, student-friendly error messages:
 - **UNKNOWN_TABLE**: Table doesn't exist
 - **UNKNOWN_COLUMN**: Column not found in any accessible table
 - **AMBIGUOUS_COLUMN**: Column exists in multiple tables (needs qualification)
-- **UNSUPPORTED_FEATURE**: Feature not yet implemented (e.g., LEFT JOIN, HAVING)
+- **UNSUPPORTED_FEATURE**: Feature not yet implemented (e.g., LEFT JOIN, multiple JOINs)
 
 ## Architecture
 
@@ -339,7 +376,6 @@ src/
 
 - LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN
 - Multiple JOINs
-- HAVING clause
 - CREATE TEMP TABLE
 - Correlated subqueries
 - Visual query explanation/execution plan

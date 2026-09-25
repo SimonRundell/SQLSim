@@ -80,6 +80,11 @@ export class Parser {
       groupBy = this.parseGroupByClause();
     }
 
+    let having = null;
+    if (this.checkKeyword('HAVING')) {
+      having = this.parseHavingClause();
+    }
+
     let orderBy = null;
     if (this.checkKeyword('ORDER')) {
       orderBy = this.parseOrderClause();
@@ -97,6 +102,7 @@ export class Parser {
       join,
       where,
       groupBy,
+      having,
       orderBy,
       limit,
       position: startToken.start,
@@ -452,7 +458,7 @@ export class Parser {
   }
 
   parseOperand() {
-    // operand := column_ref | literal | boolean
+    // operand := column_ref | literal | boolean | aggregate_function (HAVING only)
     if (
       this.check(TokenType.NUMBER) ||
       this.check(TokenType.STRING) ||
@@ -462,6 +468,18 @@ export class Parser {
     ) {
       return this.parseLiteral();
     }
+
+    // Only meaningful in a HAVING clause (set by parseHavingClause), since
+    // aggregates operate on already-grouped data - they don't make sense as
+    // a WHERE/BETWEEN/IN operand, which run before grouping happens.
+    if (this.allowAggregateOperands) {
+      const token = this.current();
+      const aggFuncs = ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'];
+      if (token.type === TokenType.KEYWORD && aggFuncs.includes(token.value.toUpperCase())) {
+        return this.parseAggregateFunction();
+      }
+    }
+
     return this.parseColumnRef();
   }
 
@@ -563,6 +581,23 @@ export class Parser {
       type: 'GroupBy',
       columns,
     };
+  }
+
+  parseHavingClause() {
+    // having_clause := HAVING or_expr
+    // Reuses the same WHERE-predicate grammar (parseOrExpr/parseAndExpr/
+    // parseNotExpr/parsePrimaryPredicate), just with aggregate functions
+    // additionally allowed as operands - toggled via allowAggregateOperands
+    // so it also applies inside any parenthesized sub-expression.
+    this.expectKeyword('HAVING');
+    const previousFlag = this.allowAggregateOperands;
+    this.allowAggregateOperands = true;
+    try {
+      const expr = this.parseOrExpr();
+      return { type: 'Having', expr };
+    } finally {
+      this.allowAggregateOperands = previousFlag;
+    }
   }
 
   parseOrderClause() {
@@ -977,7 +1012,7 @@ export class Parser {
     const token = this.current();
     
     // Check for unsupported features
-    const unsupportedKeywords = ['HAVING', 'LEFT', 'RIGHT', 'OUTER', 'FULL'];
+    const unsupportedKeywords = ['LEFT', 'RIGHT', 'OUTER', 'FULL'];
     if (token.type === TokenType.KEYWORD && unsupportedKeywords.includes(token.value.toUpperCase())) {
       throw createUnsupportedFeatureError(token.value.toUpperCase(), token.start);
     }

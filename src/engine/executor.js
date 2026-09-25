@@ -112,17 +112,23 @@ export class Executor {
       item => item.type === 'AggregateFunction'
     );
 
-    // Step 5: Apply GROUP BY if present, or create single group for aggregates without GROUP BY
+    // Step 5: Apply GROUP BY if present, or create a single group for
+    // aggregates - or a HAVING clause - without GROUP BY
     let groupedData = null;
     if (this.ast.groupBy) {
       groupedData = this.applyGroupBy(rowset);
-    } else if (hasAggregates) {
+    } else if (hasAggregates || this.ast.having) {
       // Aggregates without GROUP BY - treat entire rowset as one group
       groupedData = new Map();
       groupedData.set('_all', {
         rows: rowset,
         firstRow: rowset[0] || {},
       });
+    }
+
+    // Step 5.5: Apply HAVING filter to the groups
+    if (this.ast.having) {
+      groupedData = this.applyHaving(groupedData);
     }
 
     // Step 6: Apply SELECT projection
@@ -272,34 +278,37 @@ export class Executor {
   }
 
   /**
-   * Recursively evaluates a WHERE expression tree (And/Or/Not/Comparison/In/
-   * InSubquery/Between/Exists/BooleanLiteral) against a combined
-   * (join-namespaced) row.
+   * Recursively evaluates a WHERE/HAVING expression tree (And/Or/Not/
+   * Comparison/In/InSubquery/Between/Exists/BooleanLiteral). `evalOperandFn`
+   * resolves a leaf operand (ColumnRef/Literal/AggregateFunction) to its
+   * value - the only thing that differs between WHERE (a per-row operand),
+   * HAVING (a per-group operand, aggregate-aware), and UPDATE/DELETE (an
+   * operand resolved against the statement's own table).
    */
-  evalWhereExpr(node, combinedRow) {
+  evalExprTree(node, evalOperandFn) {
     switch (node.type) {
       case 'And':
-        return this.evalWhereExpr(node.left, combinedRow) && this.evalWhereExpr(node.right, combinedRow);
+        return this.evalExprTree(node.left, evalOperandFn) && this.evalExprTree(node.right, evalOperandFn);
       case 'Or':
-        return this.evalWhereExpr(node.left, combinedRow) || this.evalWhereExpr(node.right, combinedRow);
+        return this.evalExprTree(node.left, evalOperandFn) || this.evalExprTree(node.right, evalOperandFn);
       case 'Not':
-        return !this.evalWhereExpr(node.expr, combinedRow);
+        return !this.evalExprTree(node.expr, evalOperandFn);
       case 'BooleanLiteral':
         return node.value;
       case 'Comparison': {
-        const leftValue = this.evalOperand(node.left, combinedRow);
+        const leftValue = evalOperandFn(node.left);
         const rightValue = node.right.type === 'Subquery'
           ? this.evalScalarSubquery(node.right)
-          : this.evalOperand(node.right, combinedRow);
+          : evalOperandFn(node.right);
         return this.compareValues(leftValue, rightValue, node.operator || '=');
       }
       case 'In': {
-        const value = this.evalOperand(node.operand, combinedRow);
+        const value = evalOperandFn(node.operand);
         const isMember = node.values.some(literal => this.compareValues(value, literal.value, '='));
         return node.negate ? !isMember : isMember;
       }
       case 'InSubquery': {
-        const value = this.evalOperand(node.operand, combinedRow);
+        const value = evalOperandFn(node.operand);
         const subqueryResult = this.runSubquery(node.subquery);
         const isMember = subqueryResult.rows.some(row => this.compareValues(value, row[0], '='));
         return node.negate ? !isMember : isMember;
@@ -309,15 +318,19 @@ export class Executor {
         return subqueryResult.rows.length > 0;
       }
       case 'Between': {
-        const value = this.evalOperand(node.operand, combinedRow);
-        const low = this.evalOperand(node.low, combinedRow);
-        const high = this.evalOperand(node.high, combinedRow);
+        const value = evalOperandFn(node.operand);
+        const low = evalOperandFn(node.low);
+        const high = evalOperandFn(node.high);
         const inRange = this.compareValues(value, low, '>=') && this.compareValues(value, high, '<=');
         return node.negate ? !inRange : inRange;
       }
       default:
         return false;
     }
+  }
+
+  evalWhereExpr(node, combinedRow) {
+    return this.evalExprTree(node, operand => this.evalOperand(operand, combinedRow));
   }
 
   applyGroupBy(rowset) {
@@ -979,49 +992,47 @@ export class Executor {
    * columns default to the statement's own table via evalOperandForModification.
    */
   evalWhereExprForModification(node, combinedRow, tableName) {
-    switch (node.type) {
-      case 'And':
-        return this.evalWhereExprForModification(node.left, combinedRow, tableName) &&
-          this.evalWhereExprForModification(node.right, combinedRow, tableName);
-      case 'Or':
-        return this.evalWhereExprForModification(node.left, combinedRow, tableName) ||
-          this.evalWhereExprForModification(node.right, combinedRow, tableName);
-      case 'Not':
-        return !this.evalWhereExprForModification(node.expr, combinedRow, tableName);
-      case 'BooleanLiteral':
-        return node.value;
-      case 'Comparison': {
-        const leftValue = this.evalOperandForModification(node.left, combinedRow, tableName);
-        const rightValue = node.right.type === 'Subquery'
-          ? this.evalScalarSubquery(node.right)
-          : this.evalOperandForModification(node.right, combinedRow, tableName);
-        return this.compareValues(leftValue, rightValue, node.operator || '=');
+    return this.evalExprTree(node, operand => this.evalOperandForModification(operand, combinedRow, tableName));
+  }
+
+  /**
+   * Filters a Map of groups (as produced by applyGroupBy, or the single
+   * synthetic group used for an aggregate query without GROUP BY) down to
+   * those matching the HAVING expression.
+   */
+  applyHaving(groupedData) {
+    const filtered = new Map();
+    for (const [key, groupData] of groupedData) {
+      if (this.evalHavingExpr(this.ast.having.expr, groupData)) {
+        filtered.set(key, groupData);
       }
-      case 'In': {
-        const value = this.evalOperandForModification(node.operand, combinedRow, tableName);
-        const isMember = node.values.some(literal => this.compareValues(value, literal.value, '='));
-        return node.negate ? !isMember : isMember;
-      }
-      case 'InSubquery': {
-        const value = this.evalOperandForModification(node.operand, combinedRow, tableName);
-        const subqueryResult = this.runSubquery(node.subquery);
-        const isMember = subqueryResult.rows.some(row => this.compareValues(value, row[0], '='));
-        return node.negate ? !isMember : isMember;
-      }
-      case 'Exists': {
-        const subqueryResult = this.runSubquery(node.subquery);
-        return subqueryResult.rows.length > 0;
-      }
-      case 'Between': {
-        const value = this.evalOperandForModification(node.operand, combinedRow, tableName);
-        const low = this.evalOperandForModification(node.low, combinedRow, tableName);
-        const high = this.evalOperandForModification(node.high, combinedRow, tableName);
-        const inRange = this.compareValues(value, low, '>=') && this.compareValues(value, high, '<=');
-        return node.negate ? !inRange : inRange;
-      }
-      default:
-        return false;
     }
+    return filtered;
+  }
+
+  evalHavingExpr(node, groupData) {
+    return this.evalExprTree(node, operand => this.evalHavingOperand(operand, groupData));
+  }
+
+  /**
+   * Resolves a HAVING operand against a group: an aggregate function is
+   * computed over the group's rows (the same way computeAggregate does for
+   * a SELECT item), a plain column reads the group's first row (valid only
+   * because the Validator already confirmed it's a GROUP BY column, so
+   * every row in the group shares that value), and a literal is itself.
+   */
+  evalHavingOperand(operand, groupData) {
+    if (operand.type === 'Literal') {
+      return operand.value;
+    }
+    if (operand.type === 'AggregateFunction') {
+      return this.computeAggregate(operand, groupData.rows);
+    }
+    if (operand.type === 'ColumnRef') {
+      const tableName = operand.table || operand.resolvedTable;
+      return groupData.firstRow[tableName][operand.column];
+    }
+    return null;
   }
 }
 
