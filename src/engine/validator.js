@@ -84,16 +84,17 @@ export class Validator {
       this.addTableToScope(this.ast.from.name, this.ast.from.alias);
     }
 
-    // Validate JOIN table if present
-    if (this.ast.join) {
-      if (!this.hasTable(this.ast.join.table)) {
-        throw createUnknownTableError(this.ast.join.table);
+    // Validate each JOIN table in turn - a join's ON clause can reference
+    // any table already in scope (the FROM table or an earlier join), since
+    // it's added to scope before the next join is validated.
+    for (const join of this.ast.joins) {
+      if (!this.hasTable(join.table)) {
+        throw createUnknownTableError(join.table);
       }
-      this.addTableToScope(this.ast.join.table, this.ast.join.alias);
+      this.addTableToScope(join.table, join.alias);
 
-      // Validate JOIN ON columns
-      this.validateColumnRef(this.ast.join.on.left);
-      this.validateColumnRef(this.ast.join.on.right);
+      this.validateColumnRef(join.on.left);
+      this.validateColumnRef(join.on.right);
     }
 
     // Validate SELECT list

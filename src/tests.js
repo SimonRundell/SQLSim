@@ -759,6 +759,89 @@ export const testCases = [
     shouldPass: false,
     expectedErrorSubstring: 'Unterminated block comment',
   },
+  {
+    name: 'A second JOIN chains onto the first, three tables in one query',
+    queries: [
+      `SELECT s.forename, t.tutor_name, g.score
+       FROM students s
+       INNER JOIN tutor_groups t ON s.tutor_group_id = t.tutor_group_id
+       INNER JOIN grades g ON s.student_id = g.student_id`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      // tutor_groups is 1:1 with every student, so the row count is driven
+      // entirely by how many grade records each student has.
+      if (result.meta.rowCount !== sampleData.grades.length) {
+        throw new Error(`Expected ${sampleData.grades.length} rows, got ${result.meta.rowCount}`);
+      }
+      const rows = selectResultRows(result);
+      const alice = sampleData.students.find(s => s.forename === 'Alice');
+      const aliceTutor = sampleData.tutor_groups.find(t => t.tutor_group_id === alice.tutor_group_id).tutor_name;
+      const aliceGradeCount = sampleData.grades.filter(g => g.student_id === alice.student_id).length;
+      const aliceRows = rows.filter(r => r[0] === 'Alice');
+      if (aliceRows.length !== aliceGradeCount) {
+        throw new Error(`Expected ${aliceGradeCount} rows for Alice, got ${aliceRows.length}`);
+      }
+      if (!aliceRows.every(r => r[1] === aliceTutor)) {
+        throw new Error(`Expected every Alice row to show tutor '${aliceTutor}'`);
+      }
+    },
+  },
+  {
+    name: 'A later JOIN can reference the original FROM table, not just the one before it',
+    queries: [
+      `SELECT s.forename, g.score
+       FROM students s
+       INNER JOIN tutor_groups t ON s.tutor_group_id = t.tutor_group_id
+       INNER JOIN grades g ON s.student_id = g.student_id
+       WHERE t.room = 'B12' AND g.score >= 90`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const room = sampleData.tutor_groups.find(t => t.room === 'B12');
+      const studentIds = new Set(
+        sampleData.students.filter(s => s.tutor_group_id === room.tutor_group_id).map(s => s.student_id)
+      );
+      const expected = sampleData.grades.filter(g => studentIds.has(g.student_id) && g.score >= 90).length;
+      if (result.meta.rowCount !== expected) {
+        throw new Error(`Expected ${expected} rows, got ${result.meta.rowCount}`);
+      }
+    },
+  },
+  {
+    name: 'GROUP BY and aggregates work across multiple JOINs',
+    queries: [
+      `SELECT s.forename, s.surname, COUNT(*)
+       FROM students s
+       INNER JOIN tutor_groups t ON s.tutor_group_id = t.tutor_group_id
+       INNER JOIN grades g ON s.student_id = g.student_id
+       GROUP BY s.forename, s.surname
+       ORDER BY s.surname`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const rows = selectResultRows(result);
+      if (rows.length !== sampleData.students.length) {
+        throw new Error(`Expected ${sampleData.students.length} groups, got ${rows.length}`);
+      }
+      const alice = sampleData.students.find(s => s.forename === 'Alice');
+      const aliceGradeCount = sampleData.grades.filter(g => g.student_id === alice.student_id).length;
+      const aliceRow = rows.find(r => r[0] === 'Alice');
+      if (!aliceRow || aliceRow[2] !== aliceGradeCount) {
+        throw new Error(`Expected Alice's count to be ${aliceGradeCount}, got ${aliceRow && aliceRow[2]}`);
+      }
+    },
+  },
+  {
+    name: 'An unknown table in a second JOIN is still a clear validation error',
+    queries: [
+      `SELECT * FROM students
+       INNER JOIN tutor_groups ON students.tutor_group_id = tutor_groups.tutor_group_id
+       INNER JOIN not_a_table ON students.student_id = not_a_table.student_id`,
+    ],
+    shouldPass: false,
+    expectedErrorSubstring: 'Unknown table: not_a_table',
+  },
 ];
 
 export function runTests({ silent = false } = {}) {

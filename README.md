@@ -7,7 +7,7 @@ A client-side SQL query simulator built with React and Vite for learning SQL SEL
 - ✅ **SELECT** queries with column selection or `*`
 - ✅ **DISTINCT** for deduping result rows
 - ✅ **FROM** single table
-- ✅ **INNER JOIN** with ON conditions
+- ✅ **INNER JOIN** with ON conditions, chainable across multiple tables in one query
 - ✅ **WHERE** clauses with `AND`, `OR`, `NOT`, `IN`, `BETWEEN`, and parentheses for grouping
 - ✅ **Subqueries**: `IN (SELECT ...)`, scalar `= (SELECT ...)`, `EXISTS (SELECT ...)`, and derived tables in `FROM`
 - ✅ **GROUP BY** for data aggregation, with **HAVING** to filter groups
@@ -43,7 +43,7 @@ multiple lines */
 ```sql
 SELECT [DISTINCT] <columns or * or COUNT(*)>
 FROM <table> | (<subquery>) AS <alias>
-[INNER JOIN <table> ON <column> = <column>]
+[INNER JOIN <table> ON <column> = <column>]...
 [WHERE <condition>]
 [GROUP BY <column> [, <column> ...]]
 [HAVING <condition>]
@@ -113,6 +113,16 @@ SELECT forename, surname FROM students WHERE surname = 'Smith'
 SELECT students.forename, students.surname, tutor_groups.tutor_name
 FROM students
 INNER JOIN tutor_groups ON students.tutor_group_id = tutor_groups.tutor_group_id
+```
+
+Chain further `INNER JOIN` clauses to bring in more tables - a later join's `ON` can
+reference any table already joined, not just the one immediately before it:
+
+```sql
+SELECT s.forename, t.tutor_name, g.module, g.score
+FROM students s
+INNER JOIN tutor_groups t ON s.tutor_group_id = t.tutor_group_id
+INNER JOIN grades g ON s.student_id = g.student_id
 ```
 
 ### 4. Complex Query with All Features
@@ -360,7 +370,7 @@ The simulator provides clear, student-friendly error messages:
 - **UNKNOWN_TABLE**: Table doesn't exist
 - **UNKNOWN_COLUMN**: Column not found in any accessible table
 - **AMBIGUOUS_COLUMN**: Column exists in multiple tables (needs qualification)
-- **UNSUPPORTED_FEATURE**: Feature not yet implemented (e.g., LEFT JOIN, multiple JOINs)
+- **UNSUPPORTED_FEATURE**: Feature not yet implemented (e.g., LEFT JOIN, CASE)
 
 ## Architecture
 
@@ -384,7 +394,7 @@ src/
 ## Future Enhancements
 
 - LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN
-- Multiple JOINs
+- CASE expressions
 - CREATE TEMP TABLE
 - Correlated subqueries
 - Visual query explanation/execution plan

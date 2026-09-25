@@ -290,6 +290,45 @@ INNER JOIN grades ON students.student_id = grades.student_id`,
     },
   },
   {
+    id: 'multi-join',
+    section: 'Joining Tables',
+    title: 'Joining Multiple Tables',
+    diagram: <SchemaOverview />,
+    body: (
+      <>
+        <p>
+          You're not limited to one JOIN - chain more <code>INNER JOIN</code> clauses to bring in
+          further tables, one at a time. A later join's <code>ON</code> can reference any table
+          already joined, not just the one immediately before it - here the second join
+          references <code>s</code>, from the original <code>FROM</code>, not <code>t</code>:
+        </p>
+        <pre className="code-block">{`SELECT s.forename, t.tutor_name, g.module, g.score
+FROM students s
+INNER JOIN tutor_groups t ON s.tutor_group_id = t.tutor_group_id
+INNER JOIN grades g ON s.student_id = g.student_id`}</pre>
+        <p>
+          Everything you already know still applies across every joined table at once -{' '}
+          <code>WHERE</code>, <code>GROUP BY</code>, <code>HAVING</code>, <code>ORDER BY</code>:
+        </p>
+        <pre className="code-block">{`SELECT s.forename, t.tutor_name, g.score
+FROM students s
+INNER JOIN tutor_groups t ON s.tutor_group_id = t.tutor_group_id
+INNER JOIN grades g ON s.student_id = g.student_id
+WHERE t.room = 'B12' AND g.score >= 90
+ORDER BY g.score DESC`}</pre>
+      </>
+    ),
+    challenge: {
+      prompt: 'Join all three tables, then find grades of 90+ for students in room B12.',
+      query: `SELECT s.forename, t.tutor_name, g.module, g.score
+FROM students s
+INNER JOIN tutor_groups t ON s.tutor_group_id = t.tutor_group_id
+INNER JOIN grades g ON s.student_id = g.student_id
+WHERE t.room = 'B12' AND g.score >= 90
+ORDER BY g.score DESC`,
+    },
+  },
+  {
     id: 'aggregates',
     section: 'Aggregating Data',
     title: 'Aggregate Functions',
@@ -478,7 +517,6 @@ INNER JOIN tutor_groups ON students.tutor_group_id = tutor_groups.tutor_group_id
         <p>This is a teaching tool covering the core of SQL, not the whole standard. Not available:</p>
         <ul>
           <li>❌ LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN (only <code>INNER JOIN</code>)</li>
-          <li>❌ Multiple JOINs in a single query</li>
           <li>❌ Correlated subqueries (one that refers back to the outer query)</li>
           <li>❌ A derived table as a JOIN target (only in the main <code>FROM</code>)</li>
           <li>❌ Subqueries in the <code>SELECT</code> list</li>

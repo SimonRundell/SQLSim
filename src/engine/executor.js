@@ -97,9 +97,9 @@ export class Executor {
     // Step 1: Build initial rowset from FROM table
     let rowset = this.buildFromRowset();
 
-    // Step 2: Apply JOIN if present
-    if (this.ast.join) {
-      rowset = this.applyJoin(rowset);
+    // Step 2: Apply each JOIN in turn
+    for (const join of this.ast.joins) {
+      rowset = this.applyJoin(rowset, join);
     }
 
     // Step 3: Apply WHERE filter
@@ -243,11 +243,17 @@ export class Executor {
     return result.rows.length === 0 ? null : result.rows[0][0];
   }
 
-  applyJoin(leftRowset) {
-    const rightTableName = this.ast.join.table;
-    const rightKey = this.ast.join.alias || rightTableName;
+  /**
+   * Applies one JOIN clause against the rowset accumulated so far. Called
+   * once per join in ast.joins, in order - so a later join's ON clause can
+   * reference any table already folded into leftRowset, not just the one
+   * from the immediately preceding join.
+   */
+  applyJoin(leftRowset, join) {
+    const rightTableName = join.table;
+    const rightKey = join.alias || rightTableName;
     const rightTableData = this.data[rightTableName] || [];
-    const joinCondition = this.ast.join.on;
+    const joinCondition = join.on;
 
     const result = [];
 

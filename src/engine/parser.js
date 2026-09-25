@@ -49,7 +49,7 @@ export class Parser {
   }
 
   parseQuery() {
-    // query := SELECT select_list FROM table_ref [join_clause] [where_clause] [group_by_clause] [order_clause] [limit_clause]
+    // query := SELECT select_list FROM table_ref [join_clause]* [where_clause] [group_by_clause] [having_clause] [order_clause] [limit_clause]
     // Also used to parse subqueries (in WHERE and as a FROM-clause derived table).
     const startToken = this.current();
     this.expectKeyword('SELECT');
@@ -65,9 +65,9 @@ export class Parser {
     this.expectKeyword('FROM');
     const from = this.parseTableRef();
 
-    let join = null;
-    if (this.checkKeyword('INNER') || this.checkKeyword('JOIN')) {
-      join = this.parseJoinClause();
+    const joins = [];
+    while (this.checkKeyword('INNER') || this.checkKeyword('JOIN')) {
+      joins.push(this.parseJoinClause());
     }
 
     let where = null;
@@ -99,7 +99,7 @@ export class Parser {
       type: 'Query',
       select,
       from,
-      join,
+      joins,
       where,
       groupBy,
       having,

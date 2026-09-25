@@ -246,6 +246,17 @@ FROM students s
 INNER JOIN tutor_groups t ON s.tutor_group_id = t.tutor_group_id
 ```
 
+You're not limited to one JOIN - chain more `INNER JOIN` clauses to bring in further tables.
+A later join's `ON` can reference any table already joined, not just the one immediately
+before it:
+
+```sql
+SELECT s.forename, t.tutor_name, g.module, g.score
+FROM students s
+INNER JOIN tutor_groups t ON s.tutor_group_id = t.tutor_group_id
+INNER JOIN grades g ON s.student_id = g.student_id
+```
+
 **Try it:** join `students` to `grades` (on `student_id`), and select `forename`, `module`
 and `score`.
 
@@ -395,8 +406,8 @@ SELECT students.tutor_group_id FROM students INNER JOIN tutor_groups ON students
 This is a teaching tool covering the core of SQL, not the whole standard. Not available:
 
 - ❌ LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN (only `INNER JOIN`)
-- ❌ Multiple JOINs in a single query
 - ❌ Correlated subqueries (one that refers back to the outer query)
+- ❌ CASE expressions
 - ❌ A derived table as a JOIN target (only in the main `FROM`)
 - ❌ Subqueries in the `SELECT` list
 - ❌ CASE statements
