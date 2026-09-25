@@ -50,6 +50,8 @@ export class Parser {
 
   parseQuery() {
     // query := SELECT select_list FROM table_ref [join_clause] [where_clause] [group_by_clause] [order_clause] [limit_clause]
+    // Also used to parse subqueries (in WHERE and as a FROM-clause derived table).
+    const startToken = this.current();
     this.expectKeyword('SELECT');
     let isDistinct = false;
     if (this.checkKeyword('DISTINCT')) {
@@ -97,6 +99,7 @@ export class Parser {
       groupBy,
       orderBy,
       limit,
+      position: startToken.start,
     };
   }
 
@@ -194,7 +197,29 @@ export class Parser {
   }
 
   parseTableRef() {
-    // table_ref := IDENT [ [AS] IDENT ]
+    // table_ref := IDENT [ [AS] IDENT ]  |  "(" query ")" [AS] IDENT
+    if (this.check(TokenType.LPAREN)) {
+      const token = this.current();
+      this.advance();
+      const query = this.parseQuery();
+      this.expect(TokenType.RPAREN);
+
+      // Unlike a base table, a derived table has no name of its own, so an
+      // alias is mandatory - otherwise there'd be nothing to qualify its
+      // columns with elsewhere in the query.
+      if (this.checkKeyword('AS')) {
+        this.advance();
+      } else if (!this.check(TokenType.IDENT)) {
+        throw createSyntaxError(
+          "A derived table (subquery in FROM) must have an alias, e.g. FROM (SELECT ...) AS t",
+          this.current().start
+        );
+      }
+      const alias = this.expect(TokenType.IDENT).value;
+
+      return { type: 'DerivedTable', query, alias, position: token.start };
+    }
+
     const token = this.expect(TokenType.IDENT);
     const alias = this.parseOptionalAlias();
     return { type: 'Table', name: token.value, alias };
@@ -210,6 +235,14 @@ export class Parser {
     }
 
     this.expectKeyword('JOIN');
+
+    if (this.check(TokenType.LPAREN)) {
+      throw createSyntaxError(
+        'Derived tables (subqueries) are only supported in the main FROM clause, not in JOIN',
+        this.current().start
+      );
+    }
+
     const table = this.expect(TokenType.IDENT).value;
     const alias = this.parseOptionalAlias();
 
@@ -281,16 +314,34 @@ export class Parser {
 
   parsePrimaryPredicate() {
     // primary_predicate := "(" or_expr ")"
+    //                    | [NOT] EXISTS "(" query ")"
     //                    | TRUE | FALSE
     //                    | operand [NOT] IN "(" literal ("," literal)* ")"
+    //                    | operand [NOT] IN "(" query ")"
     //                    | operand [NOT] BETWEEN operand AND operand
-    //                    | operand operator operand
+    //                    | operand operator (operand | "(" query ")")
     // operator := "=" | "!=" | "<>" | "<" | "<=" | ">" | ">=" | LIKE
+    // (NOT EXISTS is just NOT wrapping EXISTS - parseNotExpr already handles
+    // the leading NOT generically, so only EXISTS itself is handled here.)
+
+    if (this.checkKeyword('EXISTS')) {
+      const token = this.advance();
+      this.expect(TokenType.LPAREN);
+      const query = this.parseQuery();
+      this.expect(TokenType.RPAREN);
+      return { type: 'Exists', subquery: { type: 'Subquery', query }, position: token.start };
+    }
 
     // Parenthesized group - re-enter at the top of the precedence chain.
     // The resulting subtree already encodes the grouping, so it's returned
     // as-is; no wrapper node is needed.
     if (this.check(TokenType.LPAREN)) {
+      if (this.peekKeyword('SELECT')) {
+        throw createSyntaxError(
+          "A subquery can't stand alone here. Use it with EXISTS (SELECT ...), value IN (SELECT ...), or value = (SELECT ...)",
+          this.current().start
+        );
+      }
       this.advance();
       const expr = this.parseOrExpr();
       this.expect(TokenType.RPAREN);
@@ -325,6 +376,13 @@ export class Parser {
     if (this.checkKeyword('IN')) {
       this.advance();
       this.expect(TokenType.LPAREN);
+
+      if (this.checkKeyword('SELECT')) {
+        const query = this.parseQuery();
+        this.expect(TokenType.RPAREN);
+        return { type: 'InSubquery', operand, subquery: { type: 'Subquery', query }, negate };
+      }
+
       const values = [this.parseLiteral()];
       while (this.check(TokenType.COMMA)) {
         this.advance();
@@ -380,7 +438,15 @@ export class Parser {
       );
     }
 
-    const right = this.parseOperand();
+    let right;
+    if (operator !== 'LIKE' && this.check(TokenType.LPAREN) && this.peekKeyword('SELECT')) {
+      this.advance(); // consume LPAREN
+      const query = this.parseQuery();
+      this.expect(TokenType.RPAREN);
+      right = { type: 'Subquery', query };
+    } else {
+      right = this.parseOperand();
+    }
 
     return { type: 'Comparison', left: operand, operator, right };
   }
@@ -886,7 +952,13 @@ export class Parser {
 
   checkKeyword(keyword) {
     const token = this.current();
-    return token.type === TokenType.KEYWORD && 
+    return token.type === TokenType.KEYWORD &&
+           token.value.toUpperCase() === keyword.toUpperCase();
+  }
+
+  peekKeyword(keyword, offset = 1) {
+    const token = this.tokens[this.pos + offset];
+    return Boolean(token) && token.type === TokenType.KEYWORD &&
            token.value.toUpperCase() === keyword.toUpperCase();
   }
 

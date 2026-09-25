@@ -39,7 +39,7 @@ const KEYWORDS = new Set([
   'PRIMARY', 'KEY', 'AUTO_INCREMENT',
   'DISTINCT',
   // WHERE clause logical/comparison keywords
-  'OR', 'NOT', 'IN', 'BETWEEN',
+  'OR', 'NOT', 'IN', 'BETWEEN', 'EXISTS',
   // Unsupported keywords for error detection
   'HAVING', 'LEFT', 'RIGHT', 'OUTER', 'FULL',
 ]);

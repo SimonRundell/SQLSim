@@ -636,6 +636,51 @@ INNER JOIN tutor_groups ON students.tutor_group_id = tutor_groups.tutor_group_id
           </section>
 
           <section>
+            <h3>Subqueries</h3>
+            <p>
+              A subquery is a <code>SELECT</code> query written inside another query. Subqueries
+              here are always <strong>uncorrelated</strong> - the inner query can't refer to the
+              outer query's tables or columns, it's fully self-contained.
+            </p>
+            <ul>
+              <li><code>value IN (SELECT ...)</code> - matches any value the subquery returns</li>
+              <li><code>value = (SELECT ...)</code> - a scalar subquery; it must return exactly one row and one column</li>
+              <li><code>EXISTS (SELECT ...)</code> - true if the subquery returns any row at all</li>
+              <li><code>FROM (SELECT ...) AS alias</code> - a derived table; the alias is required</li>
+            </ul>
+            <div className="example">
+              <p><strong>Examples:</strong></p>
+              <pre className="code-block">{`-- IN (subquery): students with at least one grade of 95+
+SELECT forename, surname FROM students
+WHERE student_id IN (SELECT student_id FROM grades WHERE score >= 95)
+
+-- Scalar subquery: students in the same group as room 'B12'
+SELECT forename, surname FROM students
+WHERE tutor_group_id = (SELECT tutor_group_id FROM tutor_groups WHERE room = 'B12')
+
+-- EXISTS: what column you pick doesn't matter, only whether a row comes back
+SELECT forename FROM students
+WHERE EXISTS (SELECT student_id FROM grades WHERE score >= 95)
+
+-- Derived table: build a subtotal, then query it like a table
+SELECT t.tutor_group_id, t.avg_score
+FROM (
+  SELECT students.tutor_group_id, AVG(grades.score) AS avg_score
+  FROM students
+  INNER JOIN grades ON students.student_id = grades.student_id
+  GROUP BY students.tutor_group_id
+) t
+ORDER BY t.avg_score DESC`}</pre>
+              <p>
+                ⚠️ <strong>Note:</strong> Every column a derived table exposes needs a name the
+                outer query can use - an aggregate like <code>COUNT(*)</code> or{' '}
+                <code>AVG(score)</code> inside it must have an alias with <code>AS</code>, since
+                otherwise there'd be nothing valid to call it from outside.
+              </p>
+            </div>
+          </section>
+
+          <section>
             <h3>Tips for Learning</h3>
             <ol>
               <li><strong>Start Simple:</strong> Begin with <code>SELECT * FROM tablename</code></li>
@@ -651,7 +696,7 @@ INNER JOIN tutor_groups ON students.tutor_group_id = tutor_groups.tutor_group_id
             <p>This is a teaching tool, so these features aren't available:</p>
             <ul>
               <li>❌ LEFT JOIN, RIGHT JOIN</li>
-              <li>❌ Subqueries</li>
+              <li>❌ Correlated subqueries (one that refers back to the outer query)</li>
               <li>❌ CASE statements</li>
             </ul>
           </section>

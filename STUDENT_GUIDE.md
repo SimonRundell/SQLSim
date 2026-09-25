@@ -288,7 +288,7 @@ This is an MVP (Minimum Viable Product), so these features aren't available:
 - ❌ LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN
 - ❌ Multiple JOINs in one query
 - ❌ HAVING clause
-- ❌ Subqueries
+- ❌ Correlated subqueries (a subquery that refers back to the outer query)
 
 These might be added in future versions!
 

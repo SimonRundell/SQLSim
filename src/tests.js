@@ -336,6 +336,206 @@ export const testCases = [
     shouldPass: false,
     expectedErrorSubstring: 'Expected RPAREN',
   },
+  {
+    name: 'WHERE IN (subquery) matches students with a high grade',
+    queries: [
+      `SELECT student_id FROM students
+       WHERE student_id IN (SELECT student_id FROM grades WHERE score >= 95)
+       ORDER BY student_id`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const expected = sampleData.students.filter(s =>
+        sampleData.grades.some(g => g.student_id === s.student_id && g.score >= 95)
+      ).length;
+      if (result.meta.rowCount !== expected) {
+        throw new Error(`Expected ${expected} rows, got ${result.meta.rowCount}`);
+      }
+    },
+  },
+  {
+    name: 'WHERE NOT IN (subquery) excludes students with any low grade',
+    queries: [
+      `SELECT student_id FROM students
+       WHERE student_id NOT IN (SELECT student_id FROM grades WHERE score < 70)
+       ORDER BY student_id`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const expected = sampleData.students.filter(
+        s => !sampleData.grades.some(g => g.student_id === s.student_id && g.score < 70)
+      ).length;
+      if (result.meta.rowCount !== expected) {
+        throw new Error(`Expected ${expected} rows, got ${result.meta.rowCount}`);
+      }
+    },
+  },
+  {
+    name: 'WHERE = (scalar subquery) filters by a computed single value',
+    queries: [
+      `SELECT forename, surname FROM students
+       WHERE tutor_group_id = (SELECT tutor_group_id FROM tutor_groups WHERE room = 'B12')
+       ORDER BY surname`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const targetGroup = sampleData.tutor_groups.find(t => t.room === 'B12').tutor_group_id;
+      const expected = sampleData.students.filter(s => s.tutor_group_id === targetGroup).length;
+      if (result.meta.rowCount !== expected) {
+        throw new Error(`Expected ${expected} rows, got ${result.meta.rowCount}`);
+      }
+    },
+  },
+  {
+    name: 'WHERE EXISTS (subquery) is true when the subquery finds any row',
+    queries: [`SELECT COUNT(*) FROM students WHERE EXISTS (SELECT student_id FROM grades WHERE score >= 95)`],
+    shouldPass: true,
+    assert: result => {
+      const anyHighScore = sampleData.grades.some(g => g.score >= 95);
+      const expected = anyHighScore ? sampleData.students.length : 0;
+      const rows = selectResultRows(result);
+      if (rows[0][0] !== expected) {
+        throw new Error(`Expected COUNT(*) = ${expected}, got ${rows[0][0]}`);
+      }
+    },
+  },
+  {
+    name: 'WHERE NOT EXISTS (subquery) is true when the subquery finds nothing',
+    queries: [`SELECT COUNT(*) FROM students WHERE NOT EXISTS (SELECT student_id FROM grades WHERE score > 1000)`],
+    shouldPass: true,
+    assert: result => {
+      const rows = selectResultRows(result);
+      if (rows[0][0] !== sampleData.students.length) {
+        throw new Error(`Expected COUNT(*) = ${sampleData.students.length}, got ${rows[0][0]}`);
+      }
+    },
+  },
+  {
+    name: 'Scalar subquery returning more than one row is a runtime error',
+    queries: [
+      `SELECT forename FROM students
+       WHERE tutor_group_id = (SELECT tutor_group_id FROM tutor_groups)`,
+    ],
+    shouldPass: false,
+    expectedErrorSubstring: 'returned 3 rows',
+  },
+  {
+    name: 'IN subquery returning more than one column is a validation error',
+    queries: [
+      `SELECT forename FROM students
+       WHERE student_id IN (SELECT student_id, score FROM grades)`,
+    ],
+    shouldPass: false,
+    expectedErrorSubstring: 'Subquery must return exactly one column (found 2)',
+  },
+  {
+    name: 'A bare subquery cannot stand alone in WHERE',
+    queries: [`SELECT * FROM students WHERE (SELECT 1 FROM students)`],
+    shouldPass: false,
+    expectedErrorSubstring: "can't stand alone",
+  },
+  {
+    name: 'FROM derived table (subquery) works as a table source',
+    queries: [
+      `SELECT t.tutor_group_id, g.tutor_name
+       FROM (SELECT DISTINCT tutor_group_id FROM students) t
+       INNER JOIN tutor_groups g ON t.tutor_group_id = g.tutor_group_id
+       ORDER BY t.tutor_group_id`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const expected = sampleData.tutor_groups
+        .map(t => [t.tutor_group_id, t.tutor_name])
+        .sort((a, b) => a[0] - b[0]);
+      const rows = selectResultRows(result);
+      if (JSON.stringify(rows) !== JSON.stringify(expected)) {
+        throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(rows)}`);
+      }
+    },
+  },
+  {
+    name: 'FROM derived table with GROUP BY and an aliased aggregate',
+    queries: [
+      `SELECT t.tutor_group_id, t.avg_score
+       FROM (
+         SELECT students.tutor_group_id, AVG(grades.score) AS avg_score
+         FROM students
+         INNER JOIN grades ON students.student_id = grades.student_id
+         GROUP BY students.tutor_group_id
+       ) t
+       ORDER BY t.avg_score DESC`,
+    ],
+    shouldPass: true,
+    assert: result => {
+      const rows = selectResultRows(result);
+      if (rows.length !== 3) {
+        throw new Error(`Expected 3 rows, got ${rows.length}`);
+      }
+      const groupIds = rows.map(r => r[0]).sort((a, b) => a - b);
+      if (JSON.stringify(groupIds) !== JSON.stringify([1, 2, 3])) {
+        throw new Error(`Expected tutor groups [1, 2, 3], got ${JSON.stringify(groupIds)}`);
+      }
+      for (let i = 1; i < rows.length; i++) {
+        if (rows[i][1] > rows[i - 1][1]) {
+          throw new Error('Expected avg_score to be sorted descending');
+        }
+      }
+    },
+  },
+  {
+    name: 'A derived table without an alias is a syntax error',
+    queries: [`SELECT * FROM (SELECT * FROM students)`],
+    shouldPass: false,
+    expectedErrorSubstring: 'must have an alias',
+  },
+  {
+    name: 'A derived table is not supported as a JOIN target',
+    queries: [
+      `SELECT * FROM students
+       INNER JOIN (SELECT * FROM tutor_groups) t ON students.tutor_group_id = t.tutor_group_id`,
+    ],
+    shouldPass: false,
+    expectedErrorSubstring: 'only supported in the main FROM clause',
+  },
+  {
+    name: 'An unaliased aggregate in a derived table is a syntax error',
+    queries: [`SELECT * FROM (SELECT tutor_group_id, COUNT(*) FROM students GROUP BY tutor_group_id) t`],
+    shouldPass: false,
+    expectedErrorSubstring: 'Give this COUNT(...) an alias',
+  },
+  {
+    name: 'A duplicate unaliased column name in a derived table is a syntax error',
+    queries: [`SELECT * FROM (SELECT student_id, student_id FROM students) t`],
+    shouldPass: false,
+    expectedErrorSubstring: 'appears more than once',
+  },
+  {
+    name: 'UPDATE and DELETE support IN (subquery) and NOT IN (subquery)',
+    queries: [
+      'CREATE TABLE widgets (id INT PRIMARY KEY, category VARCHAR(20), price INT)',
+      'CREATE TABLE flagged (id INT PRIMARY KEY)',
+      "INSERT INTO widgets (id, category, price) VALUES (1, 'A', 10)",
+      "INSERT INTO widgets (id, category, price) VALUES (2, 'B', 20)",
+      "INSERT INTO widgets (id, category, price) VALUES (3, 'C', 30)",
+      "INSERT INTO widgets (id, category, price) VALUES (4, 'D', 40)",
+      'INSERT INTO flagged (id) VALUES (2)',
+      'INSERT INTO flagged (id) VALUES (4)',
+      'UPDATE widgets SET price = 0 WHERE id IN (SELECT id FROM flagged)',
+      'DELETE FROM widgets WHERE id NOT IN (SELECT id FROM flagged)',
+      'SELECT id, category, price FROM widgets ORDER BY id',
+    ],
+    shouldPass: true,
+    assert: result => {
+      const expected = [
+        [2, 'B', 0],
+        [4, 'D', 0],
+      ];
+      const rows = selectResultRows(result);
+      if (JSON.stringify(rows) !== JSON.stringify(expected)) {
+        throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(rows)}`);
+      }
+    },
+  },
 ];
 
 export function runTests({ silent = false } = {}) {

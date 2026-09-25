@@ -8,7 +8,8 @@ A client-side SQL query simulator built with React and Vite for learning SQL SEL
 - ✅ **DISTINCT** for deduping result rows
 - ✅ **FROM** single table
 - ✅ **INNER JOIN** with ON conditions
-- ✅ **WHERE** clauses with AND-chained equality comparisons
+- ✅ **WHERE** clauses with `AND`, `OR`, `NOT`, `IN`, `BETWEEN`, and parentheses for grouping
+- ✅ **Subqueries**: `IN (SELECT ...)`, scalar `= (SELECT ...)`, `EXISTS (SELECT ...)`, and derived tables in `FROM`
 - ✅ **GROUP BY** for data aggregation
 - ✅ **Aggregate Functions**: COUNT(), SUM(), AVG(), MIN(), MAX()
 - ✅ **ORDER BY** with ASC/DESC
@@ -32,13 +33,15 @@ A client-side SQL query simulator built with React and Vite for learning SQL SEL
 
 ```sql
 SELECT [DISTINCT] <columns or * or COUNT(*)>
-FROM <table>
+FROM <table> | (<subquery>) AS <alias>
 [INNER JOIN <table> ON <column> = <column>]
-[WHERE <condition> AND <condition> ...]
+[WHERE <condition>]
 [GROUP BY <column> [, <column> ...]]
 [ORDER BY <column> [ASC|DESC]]
 [LIMIT <number>]
 ```
+
+A `<condition>` can combine comparisons with `AND`, `OR`, `NOT` and parentheses, and can use `IN (...)`, `BETWEEN ... AND ...`, `EXISTS (...)`, or a subquery in place of a value - see [Operators](#operators) and [Subqueries](#14-subqueries) below.
 
 ### DDL and DML
 
@@ -237,6 +240,50 @@ SELECT forename, surname, tutor_group_id FROM students
 WHERE NOT (tutor_group_id = 1 OR tutor_group_id = 3)
 ```
 
+### 14. Subqueries
+
+Subqueries are always **uncorrelated**: the inner query is self-contained and can't reference the outer query's tables or columns.
+
+```sql
+-- IN (subquery): students who have at least one grade of 95 or above
+SELECT forename, surname FROM students
+WHERE student_id IN (SELECT student_id FROM grades WHERE score >= 95)
+
+-- NOT IN (subquery): students with no grade below 70
+SELECT forename, surname FROM students
+WHERE student_id NOT IN (SELECT student_id FROM grades WHERE score < 70)
+
+-- Scalar subquery: a subquery used as a single comparison value.
+-- It must return exactly one row and one column - if it might return
+-- more than one row, use IN instead.
+SELECT forename, surname FROM students
+WHERE tutor_group_id = (SELECT tutor_group_id FROM tutor_groups WHERE room = 'B12')
+
+-- EXISTS / NOT EXISTS: true if the subquery returns any row at all
+-- (what it selects doesn't matter, only whether a row comes back)
+SELECT forename FROM students
+WHERE EXISTS (SELECT student_id FROM grades WHERE score >= 95)
+
+-- Derived table: a subquery used as a FROM-clause table. It must have an
+-- alias, and any aggregate in its SELECT list must have one too, since
+-- that's the only name the outer query can refer to it by.
+SELECT t.tutor_group_id, t.avg_score
+FROM (
+  SELECT students.tutor_group_id, AVG(grades.score) AS avg_score
+  FROM students
+  INNER JOIN grades ON students.student_id = grades.student_id
+  GROUP BY students.tutor_group_id
+) t
+ORDER BY t.avg_score DESC
+
+-- A derived table can still be INNER JOINed to a real table
+SELECT t.tutor_group_id, g.tutor_name
+FROM (SELECT DISTINCT tutor_group_id FROM students) t
+INNER JOIN tutor_groups g ON t.tutor_group_id = g.tutor_group_id
+```
+
+**Not supported:** correlated subqueries (a subquery referencing the outer query's tables), a derived table as a JOIN target, subqueries in the SELECT list, and a literal in a subquery's SELECT list (e.g. `SELECT 1 FROM ...` - project a real column instead, e.g. `SELECT student_id FROM ...`, since only what `EXISTS` cares about is whether a row comes back).
+
 ## Getting Started
 
 ### Installation
@@ -267,7 +314,7 @@ The simulator provides clear, student-friendly error messages:
 - **UNKNOWN_TABLE**: Table doesn't exist
 - **UNKNOWN_COLUMN**: Column not found in any accessible table
 - **AMBIGUOUS_COLUMN**: Column exists in multiple tables (needs qualification)
-- **UNSUPPORTED_FEATURE**: Feature not yet implemented (e.g., LEFT JOIN, subqueries)
+- **UNSUPPORTED_FEATURE**: Feature not yet implemented (e.g., LEFT JOIN, HAVING)
 
 ## Architecture
 
@@ -294,7 +341,7 @@ src/
 - Multiple JOINs
 - HAVING clause
 - CREATE TEMP TABLE
-- Subqueries
+- Correlated subqueries
 - Visual query explanation/execution plan
 
 ## Testing

@@ -5,7 +5,7 @@
 
 import { tokenize } from './tokenizer.js';
 import { parse } from './parser.js';
-import { validate } from './validator.js';
+import { validate, validateWhereSubqueries, getSelectColumnNames, getDerivedTableColumnNames } from './validator.js';
 import { schema } from '../data/schema.js';
 
 export class Executor {
@@ -161,6 +161,10 @@ export class Executor {
   }
 
   buildFromRowset() {
+    if (this.ast.from.type === 'DerivedTable') {
+      return this.buildDerivedTableRowset(this.ast.from);
+    }
+
     const tableName = this.ast.from.name;
     const key = this.ast.from.alias || tableName;
     const tableData = this.data[tableName] || [];
@@ -168,6 +172,69 @@ export class Executor {
     return tableData.map(row => ({
       [key]: { ...row },
     }));
+  }
+
+  /**
+   * Executes a FROM-clause derived table's inner query and reshapes its
+   * result rows into the same { [key]: { column: value } } namespaced shape
+   * that a base table's rowset uses, so the rest of the pipeline (JOIN,
+   * WHERE, SELECT) doesn't need to know the difference.
+   */
+  buildDerivedTableRowset(derivedTableNode) {
+    const key = derivedTableNode.alias;
+    const result = this.runSubquery(derivedTableNode);
+    const columnNames = getDerivedTableColumnNames(derivedTableNode.query.select, derivedTableNode.validator);
+
+    return result.rows.map(resultRow => {
+      const rowObj = {};
+      columnNames.forEach((name, idx) => {
+        rowObj[name] = resultRow[idx];
+      });
+      return { [key]: rowObj };
+    });
+  }
+
+  /**
+   * Executes a subquery (used by IN/scalar comparisons/EXISTS, and by
+   * FROM-clause derived tables) and caches the result. Subqueries here are
+   * always uncorrelated, so the result never depends on the outer row and
+   * is safe to compute once per query execution rather than per row.
+   */
+  runSubquery(subqueryNode) {
+    if (!this.subqueryCache) {
+      this.subqueryCache = new Map();
+    }
+    if (this.subqueryCache.has(subqueryNode)) {
+      return this.subqueryCache.get(subqueryNode);
+    }
+
+    // Every subquery reached from a SELECT (via the Validator) or from an
+    // UPDATE/DELETE WHERE clause (via validateWhereSubqueries) is validated
+    // up front. This is a defensive fallback for any other path.
+    if (!subqueryNode.validator) {
+      subqueryNode.validator = validate(subqueryNode.query, this.schema);
+    }
+
+    const subExecutor = new Executor(subqueryNode.query, this.data, subqueryNode.validator, this.schema);
+    const result = subExecutor.executeQuery();
+    this.subqueryCache.set(subqueryNode, result);
+    return result;
+  }
+
+  /**
+   * Evaluates a subquery used as a scalar operand (e.g. WHERE x = (SELECT ...)).
+   * The Validator already guarantees it projects exactly one column; if it
+   * comes back with more than one row at runtime, that's a genuine error -
+   * the same way real SQL rejects "subquery returns more than 1 row".
+   */
+  evalScalarSubquery(subqueryNode) {
+    const result = this.runSubquery(subqueryNode);
+    if (result.rows.length > 1) {
+      throw new Error(
+        `Subquery used in a comparison returned ${result.rows.length} rows; it must return at most 1 row. Tip: add a WHERE condition to the subquery, or use IN instead.`
+      );
+    }
+    return result.rows.length === 0 ? null : result.rows[0][0];
   }
 
   applyJoin(leftRowset) {
@@ -205,8 +272,9 @@ export class Executor {
   }
 
   /**
-   * Recursively evaluates a WHERE expression tree (And/Or/Not/Comparison/In/Between/
-   * BooleanLiteral) against a combined (join-namespaced) row.
+   * Recursively evaluates a WHERE expression tree (And/Or/Not/Comparison/In/
+   * InSubquery/Between/Exists/BooleanLiteral) against a combined
+   * (join-namespaced) row.
    */
   evalWhereExpr(node, combinedRow) {
     switch (node.type) {
@@ -220,13 +288,25 @@ export class Executor {
         return node.value;
       case 'Comparison': {
         const leftValue = this.evalOperand(node.left, combinedRow);
-        const rightValue = this.evalOperand(node.right, combinedRow);
+        const rightValue = node.right.type === 'Subquery'
+          ? this.evalScalarSubquery(node.right)
+          : this.evalOperand(node.right, combinedRow);
         return this.compareValues(leftValue, rightValue, node.operator || '=');
       }
       case 'In': {
         const value = this.evalOperand(node.operand, combinedRow);
         const isMember = node.values.some(literal => this.compareValues(value, literal.value, '='));
         return node.negate ? !isMember : isMember;
+      }
+      case 'InSubquery': {
+        const value = this.evalOperand(node.operand, combinedRow);
+        const subqueryResult = this.runSubquery(node.subquery);
+        const isMember = subqueryResult.rows.some(row => this.compareValues(value, row[0], '='));
+        return node.negate ? !isMember : isMember;
+      }
+      case 'Exists': {
+        const subqueryResult = this.runSubquery(node.subquery);
+        return subqueryResult.rows.length > 0;
       }
       case 'Between': {
         const value = this.evalOperand(node.operand, combinedRow);
@@ -266,41 +346,8 @@ export class Executor {
   }
 
   applySelectWithGroupBy(groupedData) {
-    // Build columns and rows from grouped data
-    const columns = [];
+    const columns = getSelectColumnNames(this.ast.select, this.validator);
     const rows = [];
-
-    // Determine column names and what to compute
-    for (const item of this.ast.select.items) {
-      if (item.type === 'ColumnRef') {
-        // Check if there's an alias
-        if (item.alias) {
-          columns.push(item.alias);
-        } else {
-          const tableName = item.table || item.resolvedTable;
-          if (this.validator.tablesInScope.length > 1 && !item.table) {
-            columns.push(`${tableName}.${item.column}`);
-          } else if (item.table) {
-            columns.push(`${item.table}.${item.column}`);
-          } else {
-            columns.push(item.column);
-          }
-        }
-      } else if (item.type === 'AggregateFunction') {
-        // Check if there's an alias
-        if (item.alias) {
-          columns.push(item.alias);
-        } else {
-          // Build aggregate column name
-          if (item.argument.type === 'Star') {
-            columns.push(`${item.function}(*)`);
-          } else {
-            const argCol = item.argument.column;
-            columns.push(`${item.function}(${argCol})`);
-          }
-        }
-      }
-    }
 
     // Build rows from each group
     for (const groupData of groupedData.values()) {
@@ -383,48 +430,25 @@ export class Executor {
   }
 
   applySelect(rowset) {
+    const columns = getSelectColumnNames(this.ast.select, this.validator);
+
     if (this.ast.select.star) {
-      // SELECT *
       const starColumns = this.validator.getStarColumns();
-      const columns = starColumns.map(c => c.displayName);
-      
       const rows = rowset.map(combinedRow => {
         return starColumns.map(c => combinedRow[c.table][c.column]);
       });
-
-      return { columns, rows };
-    } else {
-      // SELECT specific columns
-      const columns = [];
-      const columnRefs = this.ast.select.items;
-
-      // Build display names for columns
-      for (const colRef of columnRefs) {
-        // Check if there's an alias
-        if (colRef.alias) {
-          columns.push(colRef.alias);
-        } else {
-          const tableName = colRef.table || colRef.resolvedTable;
-          if (this.validator.tablesInScope.length > 1 && !colRef.table) {
-            // For unqualified columns in multi-table query, show table.column if helpful
-            columns.push(`${tableName}.${colRef.column}`);
-          } else if (colRef.table) {
-            columns.push(`${colRef.table}.${colRef.column}`);
-          } else {
-            columns.push(colRef.column);
-          }
-        }
-      }
-
-      const rows = rowset.map(combinedRow => {
-        return columnRefs.map(colRef => {
-          const tableName = colRef.table || colRef.resolvedTable;
-          return combinedRow[tableName][colRef.column];
-        });
-      });
-
       return { columns, rows };
     }
+
+    const columnRefs = this.ast.select.items;
+    const rows = rowset.map(combinedRow => {
+      return columnRefs.map(colRef => {
+        const tableName = colRef.table || colRef.resolvedTable;
+        return combinedRow[tableName][colRef.column];
+      });
+    });
+
+    return { columns, rows };
   }
 
   applyDistinct(rows) {
@@ -968,13 +992,25 @@ export class Executor {
         return node.value;
       case 'Comparison': {
         const leftValue = this.evalOperandForModification(node.left, combinedRow, tableName);
-        const rightValue = this.evalOperandForModification(node.right, combinedRow, tableName);
+        const rightValue = node.right.type === 'Subquery'
+          ? this.evalScalarSubquery(node.right)
+          : this.evalOperandForModification(node.right, combinedRow, tableName);
         return this.compareValues(leftValue, rightValue, node.operator || '=');
       }
       case 'In': {
         const value = this.evalOperandForModification(node.operand, combinedRow, tableName);
         const isMember = node.values.some(literal => this.compareValues(value, literal.value, '='));
         return node.negate ? !isMember : isMember;
+      }
+      case 'InSubquery': {
+        const value = this.evalOperandForModification(node.operand, combinedRow, tableName);
+        const subqueryResult = this.runSubquery(node.subquery);
+        const isMember = subqueryResult.rows.some(row => this.compareValues(value, row[0], '='));
+        return node.negate ? !isMember : isMember;
+      }
+      case 'Exists': {
+        const subqueryResult = this.runSubquery(node.subquery);
+        return subqueryResult.rows.length > 0;
       }
       case 'Between': {
         const value = this.evalOperandForModification(node.operand, combinedRow, tableName);
@@ -1002,9 +1038,16 @@ export function executeQuery({ queryText, tables, schema: schemaObj }) {
 
     // For DDL and DML statements, we don't validate with the old validator
     const needsValidation = ast.type === 'Query';
-    
+
     // Validate only for SELECT queries
     const validator = needsValidation ? validate(ast, schemaObj || schema) : null;
+
+    // UPDATE/DELETE never go through the Validator for their own column
+    // scope, but any subqueries embedded in their WHERE clause still need
+    // validating (and a Validator stashed on them) before they can run.
+    if ((ast.type === 'Update' || ast.type === 'Delete') && ast.where) {
+      validateWhereSubqueries(ast.where.expr, schemaObj || schema);
+    }
 
     // Execute
     const executor = new Executor(ast, tables, validator, schemaObj || schema);
