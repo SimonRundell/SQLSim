@@ -241,51 +241,105 @@ export class Parser {
   }
 
   parseWhereClause() {
-    // where_clause := WHERE predicate
+    // where_clause := WHERE or_expr
     this.expectKeyword('WHERE');
-    return this.parsePredicate();
+    const expr = this.parseOrExpr();
+    return { type: 'Where', expr };
   }
 
-  parsePredicate() {
-    // predicate := comparison (AND comparison)*
-    const comparisons = [];
-    comparisons.push(this.parseComparison());
+  parseOrExpr() {
+    // or_expr := and_expr (OR and_expr)*
+    let left = this.parseAndExpr();
+    while (this.checkKeyword('OR')) {
+      this.advance();
+      const right = this.parseAndExpr();
+      left = { type: 'Or', left, right };
+    }
+    return left;
+  }
 
+  parseAndExpr() {
+    // and_expr := not_expr (AND not_expr)*
+    let left = this.parseNotExpr();
     while (this.checkKeyword('AND')) {
       this.advance();
-      comparisons.push(this.parseComparison());
+      const right = this.parseNotExpr();
+      left = { type: 'And', left, right };
     }
-
-    return {
-      type: 'Where',
-      and: comparisons,
-    };
+    return left;
   }
 
-  parseComparison() {
-    // comparison := operand [operator operand] | TRUE | FALSE
+  parseNotExpr() {
+    // not_expr := NOT not_expr | primary_predicate
+    if (this.checkKeyword('NOT')) {
+      const token = this.advance();
+      const expr = this.parseNotExpr();
+      return { type: 'Not', expr, position: token.start };
+    }
+    return this.parsePrimaryPredicate();
+  }
+
+  parsePrimaryPredicate() {
+    // primary_predicate := TRUE | FALSE
+    //                    | operand [NOT] IN "(" literal ("," literal)* ")"
+    //                    | operand [NOT] BETWEEN operand AND operand
+    //                    | operand operator operand
     // operator := "=" | "!=" | "<>" | "<" | "<=" | ">" | ">=" | LIKE
-    const left = this.parseOperand();
-    
-    // Check if this is a standalone boolean (TRUE or FALSE without operator)
-    if (left.type === 'Literal' && left.valueType === 'boolean') {
-      const boolNumber = left.value ? 1 : 0;
-      // Check if next token is AND, EOF, or other clause keyword
-      if (this.checkKeyword('AND') || this.check(TokenType.EOF) || 
-          this.checkKeyword('ORDER') || this.checkKeyword('GROUP') || 
-          this.checkKeyword('LIMIT')) {
-        // Return a comparison that always evaluates to the boolean value
-        return {
-          left: { type: 'Literal', value: 1, valueType: 'number', position: left.position },
-          operator: '=',
-          right: { type: 'Literal', value: boolNumber, valueType: 'number', position: left.position }
-        };
+    const operand = this.parseOperand();
+
+    // Standalone boolean literal (no comparison operator following)
+    if (operand.type === 'Literal' && operand.valueType === 'boolean') {
+      const isFollowedByOperator =
+        this.checkKeyword('LIKE') ||
+        this.check(TokenType.OP_EQ) ||
+        this.check(TokenType.OP_NE) ||
+        this.check(TokenType.OP_LT) ||
+        this.check(TokenType.OP_LE) ||
+        this.check(TokenType.OP_GT) ||
+        this.check(TokenType.OP_GE);
+
+      if (!isFollowedByOperator) {
+        return { type: 'BooleanLiteral', value: operand.value, position: operand.position };
       }
     }
-    
+
+    // [NOT] IN / [NOT] BETWEEN
+    let negate = false;
+    if (this.checkKeyword('NOT')) {
+      this.advance();
+      negate = true;
+    }
+
+    if (this.checkKeyword('IN')) {
+      this.advance();
+      this.expect(TokenType.LPAREN);
+      const values = [this.parseLiteral()];
+      while (this.check(TokenType.COMMA)) {
+        this.advance();
+        values.push(this.parseLiteral());
+      }
+      this.expect(TokenType.RPAREN);
+      return { type: 'In', operand, values, negate };
+    }
+
+    if (this.checkKeyword('BETWEEN')) {
+      this.advance();
+      const low = this.parseOperand();
+      this.expectKeyword('AND');
+      const high = this.parseOperand();
+      return { type: 'Between', operand, low, high, negate };
+    }
+
+    if (negate) {
+      throw createSyntaxError(
+        `Expected IN or BETWEEN after NOT`,
+        this.current().start
+      );
+    }
+
     let operator = '=';
     const token = this.current();
-    
+
     if (this.checkKeyword('LIKE')) {
       operator = 'LIKE';
       this.advance();
@@ -309,14 +363,14 @@ export class Parser {
       this.advance();
     } else {
       throw createSyntaxError(
-        `Expected comparison operator (=, !=, <, <=, >, >=, LIKE), got ${token.type}`,
+        `Expected comparison operator (=, !=, <, <=, >, >=, LIKE, IN, BETWEEN), got ${token.type}`,
         token.start
       );
     }
-    
+
     const right = this.parseOperand();
 
-    return { left, operator, right };
+    return { type: 'Comparison', left: operand, operator, right };
   }
 
   parseOperand() {
@@ -839,7 +893,7 @@ export class Parser {
     const token = this.current();
     
     // Check for unsupported features
-    const unsupportedKeywords = ['HAVING', 'OR', 'IN', 'BETWEEN', 'LEFT', 'RIGHT', 'OUTER', 'FULL'];
+    const unsupportedKeywords = ['HAVING', 'LEFT', 'RIGHT', 'OUTER', 'FULL'];
     if (token.type === TokenType.KEYWORD && unsupportedKeywords.includes(token.value.toUpperCase())) {
       throw createUnsupportedFeatureError(token.value.toUpperCase(), token.start);
     }

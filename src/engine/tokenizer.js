@@ -37,9 +37,11 @@ const KEYWORDS = new Set([
   'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE',
   // Constraint keywords
   'PRIMARY', 'KEY', 'AUTO_INCREMENT',
+  'DISTINCT',
+  // WHERE clause logical/comparison keywords
+  'OR', 'NOT', 'IN', 'BETWEEN',
   // Unsupported keywords for error detection
-  'HAVING', 'DISTINCT',
-  'OR', 'NOT', 'IN', 'BETWEEN', 'LEFT', 'RIGHT', 'OUTER', 'FULL',
+  'HAVING', 'LEFT', 'RIGHT', 'OUTER', 'FULL',
 ]);
 
 export class Token {

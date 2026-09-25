@@ -177,6 +177,112 @@ export const testCases = [
     shouldPass: false,
     expectedErrorSubstring: "Duplicate table alias or name 's'",
   },
+  {
+    name: 'WHERE OR combines two conditions',
+    queries: [`SELECT * FROM students WHERE surname = 'Smith' OR surname = 'Brown'`],
+    shouldPass: true,
+    assert: result => {
+      const expected = sampleData.students.filter(s => s.surname === 'Smith' || s.surname === 'Brown').length;
+      if (result.meta.rowCount !== expected) {
+        throw new Error(`Expected ${expected} rows, got ${result.meta.rowCount}`);
+      }
+    },
+  },
+  {
+    name: 'WHERE NOT negates a comparison',
+    queries: [`SELECT * FROM students WHERE NOT tutor_group_id = 1`],
+    shouldPass: true,
+    assert: result => {
+      const expected = sampleData.students.filter(s => s.tutor_group_id !== 1).length;
+      if (result.meta.rowCount !== expected) {
+        throw new Error(`Expected ${expected} rows, got ${result.meta.rowCount}`);
+      }
+    },
+  },
+  {
+    name: 'WHERE IN matches any listed value',
+    queries: [`SELECT * FROM students WHERE tutor_group_id IN (1, 3)`],
+    shouldPass: true,
+    assert: result => {
+      const expected = sampleData.students.filter(s => [1, 3].includes(s.tutor_group_id)).length;
+      if (result.meta.rowCount !== expected) {
+        throw new Error(`Expected ${expected} rows, got ${result.meta.rowCount}`);
+      }
+    },
+  },
+  {
+    name: 'WHERE NOT IN excludes listed values',
+    queries: [`SELECT * FROM students WHERE tutor_group_id NOT IN (1, 3)`],
+    shouldPass: true,
+    assert: result => {
+      const expected = sampleData.students.filter(s => ![1, 3].includes(s.tutor_group_id)).length;
+      if (result.meta.rowCount !== expected) {
+        throw new Error(`Expected ${expected} rows, got ${result.meta.rowCount}`);
+      }
+    },
+  },
+  {
+    name: 'WHERE BETWEEN is inclusive of both bounds',
+    queries: [`SELECT * FROM grades WHERE score BETWEEN 80 AND 90`],
+    shouldPass: true,
+    assert: result => {
+      const expected = sampleData.grades.filter(g => g.score >= 80 && g.score <= 90).length;
+      if (result.meta.rowCount !== expected) {
+        throw new Error(`Expected ${expected} rows, got ${result.meta.rowCount}`);
+      }
+    },
+  },
+  {
+    name: 'WHERE NOT BETWEEN excludes the range',
+    queries: [`SELECT * FROM grades WHERE score NOT BETWEEN 80 AND 90`],
+    shouldPass: true,
+    assert: result => {
+      const expected = sampleData.grades.filter(g => !(g.score >= 80 && g.score <= 90)).length;
+      if (result.meta.rowCount !== expected) {
+        throw new Error(`Expected ${expected} rows, got ${result.meta.rowCount}`);
+      }
+    },
+  },
+  {
+    name: 'AND binds tighter than OR (standard SQL precedence)',
+    queries: [`SELECT * FROM students WHERE tutor_group_id = 1 AND surname = 'Smith' OR surname = 'Brown'`],
+    shouldPass: true,
+    assert: result => {
+      // Expected reading: (tutor_group_id = 1 AND surname = 'Smith') OR surname = 'Brown'
+      const expected = sampleData.students.filter(
+        s => (s.tutor_group_id === 1 && s.surname === 'Smith') || s.surname === 'Brown'
+      ).length;
+      if (result.meta.rowCount !== expected) {
+        throw new Error(`Expected ${expected} rows, got ${result.meta.rowCount}`);
+      }
+    },
+  },
+  {
+    name: 'UPDATE and DELETE support OR, NOT, IN, and BETWEEN in WHERE',
+    queries: [
+      'CREATE TABLE widgets (id INT PRIMARY KEY, category VARCHAR(20), price INT)',
+      "INSERT INTO widgets (id, category, price) VALUES (1, 'A', 10)",
+      "INSERT INTO widgets (id, category, price) VALUES (2, 'B', 20)",
+      "INSERT INTO widgets (id, category, price) VALUES (3, 'C', 30)",
+      "INSERT INTO widgets (id, category, price) VALUES (4, 'D', 40)",
+      "UPDATE widgets SET price = 0 WHERE category = 'A' OR category = 'B'",
+      "DELETE FROM widgets WHERE price BETWEEN 1 AND 35 AND NOT category = 'C'",
+      'SELECT id, category, price FROM widgets ORDER BY id',
+    ],
+    shouldPass: true,
+    assert: result => {
+      const expected = [
+        [1, 'A', 0],
+        [2, 'B', 0],
+        [3, 'C', 30],
+        [4, 'D', 40],
+      ];
+      const rows = selectResultRows(result);
+      if (JSON.stringify(rows) !== JSON.stringify(expected)) {
+        throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(rows)}`);
+      }
+    },
+  },
 ];
 
 export function runTests({ silent = false } = {}) {

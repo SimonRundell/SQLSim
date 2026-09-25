@@ -72,7 +72,8 @@ Note: All aggregate functions except COUNT(*) require a column name and work onl
 
 - **Comparison operators**: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`
 - **Pattern matching**: `LIKE` with `%` wildcard (e.g., `name LIKE 'S%'` for names starting with S)
-- **Logic**: Only `AND` (no OR, NOT, or parentheses)
+- **Range and membership**: `BETWEEN low AND high`, `IN (val1, val2, ...)` (also `NOT BETWEEN` / `NOT IN`)
+- **Logic**: `AND`, `OR`, `NOT` (no parentheses/grouping yet - `AND` binds tighter than `OR`, `NOT` binds tightest)
 
 ### Sample Tables
 
@@ -196,6 +197,37 @@ GROUP BY module
 SELECT forename, surname FROM students WHERE surname LIKE '%son%'
 ```
 
+### 13. OR, NOT, IN and BETWEEN
+
+```sql
+-- Students in tutor group 1 OR tutor group 3
+SELECT forename, surname, tutor_group_id FROM students
+WHERE tutor_group_id = 1 OR tutor_group_id = 3
+
+-- Same result, using IN
+SELECT forename, surname, tutor_group_id FROM students
+WHERE tutor_group_id IN (1, 3)
+
+-- Everyone except tutor group 1
+SELECT forename, surname, tutor_group_id FROM students
+WHERE NOT tutor_group_id = 1
+
+-- Same result, using NOT IN
+SELECT forename, surname, tutor_group_id FROM students
+WHERE tutor_group_id NOT IN (1)
+
+-- Scores in the Merit band (inclusive of both ends)
+SELECT students.forename, students.surname, grades.score
+FROM students
+INNER JOIN grades ON students.student_id = grades.student_id
+WHERE grades.score BETWEEN 70 AND 89
+
+-- AND binds tighter than OR, so this reads as
+-- (tutor_group_id = 1 AND surname = 'Smith') OR surname = 'Brown'
+SELECT forename, surname, tutor_group_id FROM students
+WHERE tutor_group_id = 1 AND surname = 'Smith' OR surname = 'Brown'
+```
+
 ## Getting Started
 
 ### Installation
@@ -251,10 +283,8 @@ src/
 
 - LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN
 - Multiple JOINs
-- OR, NOT, parentheses in WHERE
+- Parentheses for grouping in WHERE
 - HAVING clause
-- IN, BETWEEN operators
-- Table aliases
 - CREATE TEMP TABLE
 - Subqueries
 - Visual query explanation/execution plan

@@ -65,7 +65,7 @@ Contains assessment scores with columns:
 ❌ **DON'T DO THIS:**
 - Double quotes: `"Smith"` ← Use single quotes instead
 - Backticks: `` `surname` `` ← Not supported
-- OR / NOT / IN / BETWEEN ← Not supported yet
+- Parentheses to group conditions ← Not supported yet (AND binds tighter than OR, NOT binds tightest)
 
 ### Query Structure
 
@@ -210,11 +210,8 @@ SELECT * FROM students WHERE surname = 'Smith'
 **Problem:** Using SQL features not in this MVP
 ```sql
 -- ❌ These don't work yet:
-SELECT * FROM students WHERE surname LIKE 'S%' OR tutor_group_id = 1  -- OR not supported
-SELECT * FROM students WHERE tutor_group_id IN (1, 2)                 -- IN not supported
-SELECT * FROM students WHERE score BETWEEN 70 AND 90                  -- BETWEEN not supported
 SELECT * FROM students LEFT JOIN tutor_groups ON ...                  -- Outer joins not supported
-SELECT * FROM students s                                              -- Table aliases not supported
+SELECT * FROM students WHERE (a = 1 OR b = 2) AND c = 3               -- Parentheses not supported
 ```
 
 ### CONSTRAINT VIOLATION
@@ -289,13 +286,11 @@ WHERE tutor_groups.room = 'C3' AND students.surname = 'Moore'
 ## What's NOT Supported (Yet)
 
 This is an MVP (Minimum Viable Product), so these features aren't available:
-- ❌ LEFT JOIN, RIGHT JOIN
+- ❌ LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN
 - ❌ Multiple JOINs in one query
-- ❌ OR, NOT operators
-- ❌ GROUP BY, COUNT, SUM, AVG
-- ❌ LIKE, IN, BETWEEN
-- ❌ Comparison operators: >, <, >=, <=, !=
-- ❌ Table aliases (AS)
+- ❌ Parentheses to group conditions in WHERE
+- ❌ HAVING clause
+- ❌ Subqueries
 
 These might be added in future versions!
 

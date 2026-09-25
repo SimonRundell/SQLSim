@@ -95,19 +95,43 @@ export class Validator {
 
     // Validate WHERE clause
     if (this.ast.where) {
-      for (const comparison of this.ast.where.and) {
-        if (comparison.left.type === 'ColumnRef') {
-          this.validateColumnRef(comparison.left);
-        }
-        if (comparison.right.type === 'ColumnRef') {
-          this.validateColumnRef(comparison.right);
-        }
-      }
+      this.validateWhereExpr(this.ast.where.expr);
     }
 
     // Validate ORDER BY
     if (this.ast.orderBy) {
       this.validateColumnRef(this.ast.orderBy.column);
+    }
+  }
+
+  /**
+   * Recursively validates every column reference within a WHERE expression tree
+   * (And/Or/Not/Comparison/In/Between/BooleanLiteral nodes).
+   */
+  validateWhereExpr(node) {
+    switch (node.type) {
+      case 'And':
+      case 'Or':
+        this.validateWhereExpr(node.left);
+        this.validateWhereExpr(node.right);
+        break;
+      case 'Not':
+        this.validateWhereExpr(node.expr);
+        break;
+      case 'Comparison':
+        if (node.left.type === 'ColumnRef') this.validateColumnRef(node.left);
+        if (node.right.type === 'ColumnRef') this.validateColumnRef(node.right);
+        break;
+      case 'In':
+        if (node.operand.type === 'ColumnRef') this.validateColumnRef(node.operand);
+        break;
+      case 'Between':
+        if (node.operand.type === 'ColumnRef') this.validateColumnRef(node.operand);
+        if (node.low.type === 'ColumnRef') this.validateColumnRef(node.low);
+        if (node.high.type === 'ColumnRef') this.validateColumnRef(node.high);
+        break;
+      case 'BooleanLiteral':
+        break;
     }
   }
 

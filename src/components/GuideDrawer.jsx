@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import './GuideDrawer.css';
 
 function GuideDrawer({ isOpen, onClose }) {
@@ -480,6 +479,41 @@ WHERE module LIKE '%Data%' -- Contains Data`}</pre>
           </section>
 
           <section>
+            <h3>Combining Conditions: AND, OR, NOT, IN, BETWEEN</h3>
+            <ul>
+              <li><code>AND</code> - Both conditions must be true</li>
+              <li><code>OR</code> - Either condition can be true</li>
+              <li><code>NOT</code> - Negates the condition that follows it</li>
+              <li><code>IN (a, b, ...)</code> - Matches any value in the list</li>
+              <li><code>BETWEEN low AND high</code> - Matches an inclusive range</li>
+            </ul>
+            <div className="example">
+              <p><strong>Examples:</strong></p>
+              <pre className="code-block">{`-- OR: either tutor group
+WHERE tutor_group_id = 1 OR tutor_group_id = 3
+
+-- Same thing, using IN
+WHERE tutor_group_id IN (1, 3)
+
+-- NOT: everyone except tutor group 1
+WHERE NOT tutor_group_id = 1
+
+-- BETWEEN is inclusive of both ends
+WHERE score BETWEEN 70 AND 89
+
+-- NOT IN / NOT BETWEEN also work
+WHERE tutor_group_id NOT IN (1)
+WHERE score NOT BETWEEN 70 AND 89`}</pre>
+              <p>
+                ⚠️ <strong>Note:</strong> There are no parentheses yet, so <code>AND</code> is
+                always worked out before <code>OR</code>, and <code>NOT</code> before that. Write
+                <code> WHERE a = 1 AND b = 2 OR c = 3</code> and it reads as{' '}
+                <code>(a = 1 AND b = 2) OR c = 3</code>.
+              </p>
+            </div>
+          </section>
+
+          <section>
             <h3>Example Queries</h3>
 
             <h4>Beginner</h4>
@@ -610,8 +644,7 @@ INNER JOIN tutor_groups ON students.tutor_group_id = tutor_groups.tutor_group_id
             <p>This is a teaching tool, so these features aren't available:</p>
             <ul>
               <li>❌ LEFT JOIN, RIGHT JOIN</li>
-              <li>❌ OR, NOT operators</li>
-              <li>❌ IN, BETWEEN</li>
+              <li>❌ Parentheses to group conditions</li>
               <li>❌ Subqueries</li>
               <li>❌ CASE statements</li>
             </ul>

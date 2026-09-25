@@ -58,7 +58,7 @@ export function createAmbiguousColumnError(columnName, tables, position = null) 
 export function createUnsupportedFeatureError(feature, position = null) {
   return new SqlError(
     ErrorCodes.UNSUPPORTED_FEATURE,
-    `Unsupported feature: ${feature}. Tip: this simulator supports SELECT, FROM, INNER JOIN, WHERE (AND only), ORDER BY, LIMIT, DISTINCT, basic aggregates, and simple DDL/DML. Remove '${feature}' or replace it with a supported construct.`,
+    `Unsupported feature: ${feature}. Tip: this simulator supports SELECT, FROM, INNER JOIN, WHERE (AND, OR, NOT, IN, BETWEEN), ORDER BY, LIMIT, DISTINCT, basic aggregates, and simple DDL/DML. Remove '${feature}' or replace it with a supported construct.`,
     position
   );
 }

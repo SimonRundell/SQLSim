@@ -140,7 +140,7 @@ export class Executor {
     // Step 7: Apply ORDER BY
     let orderedRows = rows;
     if (this.ast.orderBy) {
-      orderedRows = this.applyOrderBy(rows, columns, rowset);
+      orderedRows = this.applyOrderBy(rows, columns);
     }
 
     // Step 8: Apply LIMIT
@@ -201,19 +201,43 @@ export class Executor {
   }
 
   applyWhere(rowset) {
-    return rowset.filter(row => {
-      // All comparisons must be true (AND logic)
-      for (const comparison of this.ast.where.and) {
-        const leftValue = this.evalOperand(comparison.left, row);
-        const rightValue = this.evalOperand(comparison.right, row);
-        const operator = comparison.operator || '=';
+    return rowset.filter(row => this.evalWhereExpr(this.ast.where.expr, row));
+  }
 
-        if (!this.compareValues(leftValue, rightValue, operator)) {
-          return false;
-        }
+  /**
+   * Recursively evaluates a WHERE expression tree (And/Or/Not/Comparison/In/Between/
+   * BooleanLiteral) against a combined (join-namespaced) row.
+   */
+  evalWhereExpr(node, combinedRow) {
+    switch (node.type) {
+      case 'And':
+        return this.evalWhereExpr(node.left, combinedRow) && this.evalWhereExpr(node.right, combinedRow);
+      case 'Or':
+        return this.evalWhereExpr(node.left, combinedRow) || this.evalWhereExpr(node.right, combinedRow);
+      case 'Not':
+        return !this.evalWhereExpr(node.expr, combinedRow);
+      case 'BooleanLiteral':
+        return node.value;
+      case 'Comparison': {
+        const leftValue = this.evalOperand(node.left, combinedRow);
+        const rightValue = this.evalOperand(node.right, combinedRow);
+        return this.compareValues(leftValue, rightValue, node.operator || '=');
       }
-      return true;
-    });
+      case 'In': {
+        const value = this.evalOperand(node.operand, combinedRow);
+        const isMember = node.values.some(literal => this.compareValues(value, literal.value, '='));
+        return node.negate ? !isMember : isMember;
+      }
+      case 'Between': {
+        const value = this.evalOperand(node.operand, combinedRow);
+        const low = this.evalOperand(node.low, combinedRow);
+        const high = this.evalOperand(node.high, combinedRow);
+        const inRange = this.compareValues(value, low, '>=') && this.compareValues(value, high, '<=');
+        return node.negate ? !inRange : inRange;
+      }
+      default:
+        return false;
+    }
   }
 
   applyGroupBy(rowset) {
@@ -279,7 +303,7 @@ export class Executor {
     }
 
     // Build rows from each group
-    for (const [groupKey, groupData] of groupedData) {
+    for (const groupData of groupedData.values()) {
       const row = [];
 
       for (const item of this.ast.select.items) {
@@ -342,9 +366,10 @@ export class Executor {
       case 'SUM':
         return values.reduce((sum, val) => sum + val, 0);
       
-      case 'AVG':
+      case 'AVG': {
         const sum = values.reduce((s, val) => s + val, 0);
         return Math.round((sum / values.length) * 100) / 100; // Round to 2 decimal places
+      }
       
       case 'MIN':
         return Math.min(...values);
@@ -417,7 +442,7 @@ export class Executor {
     return unique;
   }
 
-  applyOrderBy(rows, columns, originalRowset) {
+  applyOrderBy(rows, columns) {
     const orderCol = this.ast.orderBy.column;
     const direction = this.ast.orderBy.direction;
     const tableName = orderCol.table || orderCol.resolvedTable;
@@ -800,17 +825,7 @@ export class Executor {
       rowsToUpdate = rowsToUpdate.filter(row => {
         // Convert row to combined format for evaluation
         const combinedRow = { [tableName]: row };
-        
-        for (const comparison of where.and) {
-          const leftValue = this.evalOperandForModification(comparison.left, combinedRow, tableName);
-          const rightValue = this.evalOperandForModification(comparison.right, combinedRow, tableName);
-          const operator = comparison.operator || '=';
-          
-          if (!this.compareValues(leftValue, rightValue, operator)) {
-            return false;
-          }
-        }
-        return true;
+        return this.evalWhereExprForModification(where.expr, combinedRow, tableName);
       });
     }
     
@@ -899,19 +914,8 @@ export class Executor {
     for (const row of tableData) {
       // Convert row to combined format for evaluation
       const combinedRow = { [tableName]: row };
-      
-      let shouldDelete = true;
-      for (const comparison of where.and) {
-        const leftValue = this.evalOperandForModification(comparison.left, combinedRow, tableName);
-        const rightValue = this.evalOperandForModification(comparison.right, combinedRow, tableName);
-        const operator = comparison.operator || '=';
-        
-        if (!this.compareValues(leftValue, rightValue, operator)) {
-          shouldDelete = false;
-          break;
-        }
-      }
-      
+      const shouldDelete = this.evalWhereExprForModification(where.expr, combinedRow, tableName);
+
       if (shouldDelete) {
         deleteCount++;
       } else {
@@ -943,6 +947,45 @@ export class Executor {
     }
 
     return null;
+  }
+
+  /**
+   * Same as evalWhereExpr, but for UPDATE/DELETE WHERE clauses, which are not
+   * scope-resolved by the Validator (only SELECT queries are) - unqualified
+   * columns default to the statement's own table via evalOperandForModification.
+   */
+  evalWhereExprForModification(node, combinedRow, tableName) {
+    switch (node.type) {
+      case 'And':
+        return this.evalWhereExprForModification(node.left, combinedRow, tableName) &&
+          this.evalWhereExprForModification(node.right, combinedRow, tableName);
+      case 'Or':
+        return this.evalWhereExprForModification(node.left, combinedRow, tableName) ||
+          this.evalWhereExprForModification(node.right, combinedRow, tableName);
+      case 'Not':
+        return !this.evalWhereExprForModification(node.expr, combinedRow, tableName);
+      case 'BooleanLiteral':
+        return node.value;
+      case 'Comparison': {
+        const leftValue = this.evalOperandForModification(node.left, combinedRow, tableName);
+        const rightValue = this.evalOperandForModification(node.right, combinedRow, tableName);
+        return this.compareValues(leftValue, rightValue, node.operator || '=');
+      }
+      case 'In': {
+        const value = this.evalOperandForModification(node.operand, combinedRow, tableName);
+        const isMember = node.values.some(literal => this.compareValues(value, literal.value, '='));
+        return node.negate ? !isMember : isMember;
+      }
+      case 'Between': {
+        const value = this.evalOperandForModification(node.operand, combinedRow, tableName);
+        const low = this.evalOperandForModification(node.low, combinedRow, tableName);
+        const high = this.evalOperandForModification(node.high, combinedRow, tableName);
+        const inRange = this.compareValues(value, low, '>=') && this.compareValues(value, high, '<=');
+        return node.negate ? !inRange : inRange;
+      }
+      default:
+        return false;
+    }
   }
 }
 
